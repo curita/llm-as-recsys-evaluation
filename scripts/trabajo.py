@@ -103,12 +103,15 @@ def get_task_description(dataset: MovieLensDataSet, movie_id: int):
 
 
 def generate_prompt(
-    dataset: MovieLensDataSet, user_id: int, movie_id: int, likes_count: int, dislikes_count: int, seed: int
+    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_count: int, dislikes_count: int, seed: int
 ) -> str:
-    context = get_context(dataset=dataset, user_id=user_id, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
     task_description = get_task_description(dataset=dataset, movie_id=movie_id)
 
-    return f"{context}.\n\n{task_description}"
+    if with_context:
+        context = get_context(dataset=dataset, user_id=user_id, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
+        return f"{context}.\n\n{task_description}"
+
+    return task_description
 
 
 class MockListDataset(Dataset):
@@ -133,13 +136,14 @@ def parse_model_output(output: str) -> bool:
 @click.option("--model", default="google/flan-t5-base", type=str)
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
-def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count):
-    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=}.")
+@click.option("--with-context/--without-context", default=True)
+def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context):
+    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=}.")
     logger.info("Creating dataset...")
     dataset = MovieLensDataSet(seed=dataset_seed, training_ratio=training_ratio)
     logger.info("Generating prompts...")
     prompts = [
-      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, likes_count=likes_count, dislikes_count=dislikes_count, seed=prompt_seed)
+      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_count=likes_count, dislikes_count=dislikes_count, seed=prompt_seed)
       for row in dataset.testing_df.itertuples()
     ]
     logger.info("Initializing text-generation pipeline...")
@@ -152,7 +156,7 @@ def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_cou
 
     logger.info("Dumping results...")
 
-    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
+    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{with_context=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
     output_folder = Path(f"results") / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
