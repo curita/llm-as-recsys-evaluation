@@ -125,13 +125,14 @@ def generate_zeroshot_prompt(
 def generate_prompt(
     dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, shot: int, likes_count: int, dislikes_count: int, seed: int
 ):
+    kwargs = {"dataset": dataset, "with_context": with_context, "likes_first": likes_first, "task_desc_version": task_desc_version, "likes_count": likes_count, "dislikes_count": dislikes_count, "seed": seed}
     prompt = ""
     example_ratings = dataset.training_df.sample(n=shot, replace=False, random_state=seed)
     for example in example_ratings.itertuples():
-        prompt += generate_zeroshot_prompt(dataset=dataset, user_id=example.userId, movie_id=example.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
+        prompt += generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, **kwargs)
         prompt += f'\n{example.rating}\n\n\n'
 
-    zero_shot = generate_zeroshot_prompt(dataset=dataset, user_id=user_id, movie_id=movie_id, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
+    zero_shot = generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id, **kwargs)
     prompt += zero_shot
     return prompt
 
