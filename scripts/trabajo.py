@@ -110,7 +110,7 @@ def get_task_description(dataset: MovieLensDataSet, movie_id: int, task_desc_ver
     return versioned_descriptions[task_desc_version].format(dataset.get_movie_name(movie_id))
 
 
-def generate_prompt(
+def generate_zeroshot_prompt(
     dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, likes_count: int, dislikes_count: int, seed: int
 ) -> str:
     task_description = get_task_description(dataset=dataset, movie_id=movie_id, task_desc_version=task_desc_version)
@@ -121,6 +121,19 @@ def generate_prompt(
 
     return task_description
 
+
+def generate_prompt(
+    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, shot: int, likes_count: int, dislikes_count: int, seed: int
+):
+    prompt = ""
+    example_ratings = dataset.training_df.sample(n=shot, replace=False, random_state=seed)
+    for example in example_ratings.itertuples():
+        prompt += generate_zeroshot_prompt(dataset=dataset, user_id=example.userId, movie_id=example.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
+        prompt += f'\n{example.rating}\n\n\n'
+
+    zero_shot = generate_zeroshot_prompt(dataset=dataset, user_id=user_id, movie_id=movie_id, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
+    prompt += zero_shot
+    return prompt
 
 class MockListDataset(Dataset):
     def __init__(self, original_list):
@@ -147,13 +160,14 @@ def parse_model_output(output: str) -> bool:
 @click.option("--with-context/--without-context", default=True)
 @click.option("--likes-first/--dislikes-first", default=True)
 @click.option("--task-desc-version", default=1, type=int)
-def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version):
-    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=} {likes_first=} {task_desc_version=}.")
+@click.option("--shot", default=0, type=int)
+def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot):
+    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=} {likes_first=} {task_desc_version=} {shot=}.")
     logger.info("Creating dataset...")
     dataset = MovieLensDataSet(seed=dataset_seed, training_ratio=training_ratio)
     logger.info("Generating prompts...")
     prompts = [
-      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, likes_count=likes_count, dislikes_count=dislikes_count, seed=prompt_seed)
+      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, shot=shot, likes_count=likes_count, dislikes_count=dislikes_count, seed=prompt_seed)
       for row in dataset.testing_df.itertuples()
     ]
     logger.info("Initializing text-generation pipeline...")
@@ -166,7 +180,7 @@ def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_cou
 
     logger.info("Dumping results...")
 
-    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{with_context=}_{likes_first=}_{task_desc_version=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
+    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{with_context=}_{likes_first=}_{task_desc_version=}_{shot=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
     output_folder = Path(f"results") / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
