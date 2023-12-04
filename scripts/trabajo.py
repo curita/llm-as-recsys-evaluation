@@ -127,7 +127,9 @@ def generate_prompt(
 ):
     kwargs = {"dataset": dataset, "with_context": with_context, "likes_first": likes_first, "task_desc_version": task_desc_version, "likes_count": likes_count, "dislikes_count": dislikes_count, "seed": seed}
     prompt = ""
-    example_ratings = dataset.training_df.sample(n=shot, replace=False, random_state=(seed + user_id + movie_id))
+    # XXX: Set an initial state in the random library instead.
+    # Reference: https://stackoverflow.com/questions/52375356/is-there-a-way-to-set-random-state-for-all-pandas-function
+    example_ratings = dataset.training_df.sample(n=shot, replace=False, random_state=(seed + user_id + (movie_id * dataset.ratings_df["userId"].nunique())))
     for example in example_ratings.itertuples():
         prompt += generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, **kwargs)
         prompt += f'\n{example.rating}\n\n\n'
