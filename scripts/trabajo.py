@@ -61,7 +61,14 @@ def get_rated_movies(
     )
 
 
-def get_context(dataset: MovieLensDataSet, user_id: int, likes_count: int, dislikes_count: int, seed: int):
+def get_rated_movies_context(dataset: MovieLensDataSet, rating: float, sample: list[int], initial_prefix: str = "A") -> str:
+    context = f'{initial_prefix} user rated with {rating} stars the movie "{dataset.get_movie_name(sample[0])}".'
+    for x in sample[1:]:
+        context += f' The user rated with {rating} stars the movie "{dataset.get_movie_name(x)}".'
+    return context
+
+
+def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, likes_count: int, dislikes_count: int, seed: int):
     user_max_rating = dataset.ratings_df[dataset.ratings_df["userId"] == user_id]["rating"].max()
     user_min_rating = dataset.ratings_df[dataset.ratings_df["userId"] == user_id]["rating"].min()
 
@@ -78,22 +85,18 @@ def get_context(dataset: MovieLensDataSet, user_id: int, likes_count: int, disli
 
     assert likes_sample or dislikes_sample
 
-    # XXX: Abstract these into a single helper for both cases
-    context = ""
-    if likes_sample:
-        context = f'A user rated with {user_max_rating} stars the movie "{dataset.get_movie_name(likes_sample[0])}".'
-        for x in likes_sample[1:]:
-            context += f' The user rated with {user_max_rating} stars the movie "{dataset.get_movie_name(x)}".'
+    rated_context_data = [(user_max_rating, likes_sample), (user_min_rating, dislikes_sample)]
 
-    if dislikes_sample:
+    if not likes_first:
+        rated_context_data = reversed(rated_context_data)
+
+    context = ""
+    for rating, sample in rated_context_data:
         if not context:
             prefix = "A"
         else:
             prefix = "\n\nThe"
-
-        context += f'{prefix} user rated with {user_min_rating} stars the movie "{dataset.get_movie_name(dislikes_sample[0])}".'
-        for x in dislikes_sample[1:]:
-            context += f' The user rated with {user_min_rating} stars the movie "{dataset.get_movie_name(x)}".'
+        context += get_rated_movies_context(dataset=dataset, rating=rating, sample=sample, initial_prefix=prefix)
 
     return context
 
@@ -103,12 +106,12 @@ def get_task_description(dataset: MovieLensDataSet, movie_id: int):
 
 
 def generate_prompt(
-    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_count: int, dislikes_count: int, seed: int
+    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, likes_count: int, dislikes_count: int, seed: int
 ) -> str:
     task_description = get_task_description(dataset=dataset, movie_id=movie_id)
 
     if with_context:
-        context = get_context(dataset=dataset, user_id=user_id, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
+        context = get_context(dataset=dataset, user_id=user_id, likes_first=likes_first, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
         return f"{context}.\n\n{task_description}"
 
     return task_description
@@ -137,13 +140,14 @@ def parse_model_output(output: str) -> bool:
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
 @click.option("--with-context/--without-context", default=True)
-def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context):
-    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=}.")
+@click.option("--likes-first/--dislikes-first", default=True)
+def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first):
+    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=} {likes_first=}.")
     logger.info("Creating dataset...")
     dataset = MovieLensDataSet(seed=dataset_seed, training_ratio=training_ratio)
     logger.info("Generating prompts...")
     prompts = [
-      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_count=likes_count, dislikes_count=dislikes_count, seed=prompt_seed)
+      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, likes_count=likes_count, dislikes_count=dislikes_count, seed=prompt_seed)
       for row in dataset.testing_df.itertuples()
     ]
     logger.info("Initializing text-generation pipeline...")
@@ -156,7 +160,7 @@ def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_cou
 
     logger.info("Dumping results...")
 
-    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{with_context=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
+    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{with_context=}_{likes_first=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
     output_folder = Path(f"results") / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
