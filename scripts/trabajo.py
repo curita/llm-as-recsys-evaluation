@@ -92,6 +92,9 @@ def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, like
 
     context = ""
     for rating, sample in rated_context_data:
+        if not sample:
+            continue
+
         if not context:
             prefix = "A"
         else:
