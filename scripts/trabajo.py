@@ -192,6 +192,7 @@ def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_cou
       generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, shot=shot, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, seed=prompt_seed)
       for row in dataset.testing_df.itertuples()
     ]
+    logger.info(f"Prompt Example:\n{prompts[0]}")
     logger.info("Initializing text-generation pipeline...")
     text2textgenerator = pipeline("text2text-generation", model=model, device_map="auto")
     logger.info("Running model...")
