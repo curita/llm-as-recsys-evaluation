@@ -40,6 +40,9 @@ class MovieLensDataSet:
             "normalize_title"
         ].iloc[0]
 
+    def get_movie_genres(self, movie_id: int) -> list[str]:
+        return self.movies_df[self.movies_df["movieId"] == movie_id]["genres"].iloc[0].split("|")
+
 
 def get_rated_movies(
     dataset: MovieLensDataSet,
@@ -61,14 +64,22 @@ def get_rated_movies(
     )
 
 
-def get_rated_movies_context(dataset: MovieLensDataSet, rating: float, sample: list[int], initial_prefix: str = "A") -> str:
-    context = f'{initial_prefix} user rated with {rating} stars the movie "{dataset.get_movie_name(sample[0])}".'
-    for x in sample[1:]:
-        context += f' The user rated with {rating} stars the movie "{dataset.get_movie_name(x)}".'
+def get_rated_movies_context(dataset: MovieLensDataSet, rating: float, sample: list[int], with_genre: bool, initial_prefix: str = "A") -> str:
+    context = ""
+    prefix = initial_prefix
+    for x in sample:
+
+        additional_movie_data = ""
+        if with_genre:
+            additional_movie_data += f' ({"|".join(dataset.get_movie_genres(x))})'
+
+        context += f'{prefix} user rated with {rating} stars the movie {dataset.get_movie_name(x)}{additional_movie_data}.'
+        prefix = " The"
+
     return context
 
 
-def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, likes_count: int, dislikes_count: int, seed: int):
+def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, likes_count: int, dislikes_count: int, with_genre: bool, seed: int):
     user_max_rating = dataset.ratings_df[dataset.ratings_df["userId"] == user_id]["rating"].max()
     user_min_rating = dataset.ratings_df[dataset.ratings_df["userId"] == user_id]["rating"].min()
 
@@ -99,7 +110,7 @@ def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, like
             prefix = "A"
         else:
             prefix = "\n\nThe"
-        context += get_rated_movies_context(dataset=dataset, rating=rating, sample=sample, initial_prefix=prefix)
+        context += get_rated_movies_context(dataset=dataset, rating=rating, sample=sample, with_genre=with_genre, initial_prefix=prefix)
 
     return context
 
@@ -114,21 +125,21 @@ def get_task_description(dataset: MovieLensDataSet, movie_id: int, task_desc_ver
 
 
 def generate_zeroshot_prompt(
-    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, likes_count: int, dislikes_count: int, seed: int
+    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, likes_count: int, dislikes_count: int, with_genre: bool, seed: int
 ) -> str:
     task_description = get_task_description(dataset=dataset, movie_id=movie_id, task_desc_version=task_desc_version)
 
     if with_context:
-        context = get_context(dataset=dataset, user_id=user_id, likes_first=likes_first, likes_count=likes_count, dislikes_count=dislikes_count, seed=seed)
+        context = get_context(dataset=dataset, user_id=user_id, likes_first=likes_first, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, seed=seed)
         return f"{context}.\n\n{task_description}"
 
     return task_description
 
 
 def generate_prompt(
-    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, shot: int, likes_count: int, dislikes_count: int, seed: int
+    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, shot: int, likes_count: int, dislikes_count: int, with_genre: bool, seed: int
 ):
-    kwargs = {"dataset": dataset, "with_context": with_context, "likes_first": likes_first, "task_desc_version": task_desc_version, "likes_count": likes_count, "dislikes_count": dislikes_count, "seed": seed}
+    kwargs = {"dataset": dataset, "with_context": with_context, "likes_first": likes_first, "task_desc_version": task_desc_version, "likes_count": likes_count, "dislikes_count": dislikes_count, "with_genre": with_genre, "seed": seed}
     prompt = ""
     # XXX: Set an initial state in the random library instead.
     # Reference: https://stackoverflow.com/questions/52375356/is-there-a-way-to-set-random-state-for-all-pandas-function
@@ -167,13 +178,14 @@ def parse_model_output(output: str) -> bool:
 @click.option("--likes-first/--dislikes-first", default=True)
 @click.option("--task-desc-version", default=1, type=int)
 @click.option("--shot", default=0, type=int)
-def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot):
-    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=} {likes_first=} {task_desc_version=} {shot=}.")
+@click.option("--with-genre/--without-genre", default=False)
+def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre):
+    logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=} {likes_first=} {task_desc_version=} {shot=} {with_genre=}.")
     logger.info("Creating dataset...")
     dataset = MovieLensDataSet(seed=dataset_seed, training_ratio=training_ratio)
     logger.info("Generating prompts...")
     prompts = [
-      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, shot=shot, likes_count=likes_count, dislikes_count=dislikes_count, seed=prompt_seed)
+      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, shot=shot, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, seed=prompt_seed)
       for row in dataset.testing_df.itertuples()
     ]
     logger.info("Initializing text-generation pipeline...")
@@ -186,7 +198,7 @@ def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_cou
 
     logger.info("Dumping results...")
 
-    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{with_context=}_{likes_first=}_{task_desc_version=}_{shot=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
+    folder_name = f"experiment_{training_ratio=}_{prompt_seed=}_{model=}_{with_context=}_{likes_first=}_{task_desc_version=}_{shot=}_{with_genre=}_{likes_count=}_{dislikes_count=}".replace("/", ":")
     output_folder = Path(f"results") / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
 
