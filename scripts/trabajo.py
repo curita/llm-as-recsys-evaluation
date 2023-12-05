@@ -64,16 +64,19 @@ def get_rated_movies(
     )
 
 
+def get_movie_info(dataset: MovieLensDataSet, movie_id: int, with_genre: bool) -> str:
+    info = f'"{dataset.get_movie_name(movie_id)}"'
+    if with_genre:
+        info += f' ({"|".join(dataset.get_movie_genres(movie_id))})'
+    return info
+
+
 def get_rated_movies_context(dataset: MovieLensDataSet, rating: float, sample: list[int], with_genre: bool, initial_prefix: str = "A") -> str:
     context = ""
     prefix = initial_prefix
     for x in sample:
-
-        additional_movie_data = ""
-        if with_genre:
-            additional_movie_data += f' ({"|".join(dataset.get_movie_genres(x))})'
-
-        context += f'{prefix} user rated with {rating} stars the movie {dataset.get_movie_name(x)}{additional_movie_data}.'
+        movie_info = get_movie_info(dataset=dataset, movie_id=x, with_genre=with_genre)
+        context += f'{prefix} user rated with {rating} stars the movie {movie_info}.'
         prefix = " The"
 
     return context
@@ -115,19 +118,20 @@ def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, like
     return context
 
 
-def get_task_description(dataset: MovieLensDataSet, movie_id: int, task_desc_version: int):
+def get_task_description(dataset: MovieLensDataSet, movie_id: int, task_desc_version: int, with_genre: bool):
     versioned_descriptions = {
-        1: 'On the scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5 (0.5 being lowest and 5 being highest), how would the user rate the movie "{}"?',
-        2: 'How would the user rate the movie "{}" on a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5.0 (0.5 being lowest and 5.0 being highest)?',
+        1: 'On the scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5 (0.5 being lowest and 5 being highest), how would the user rate the movie {}?',
+        2: 'How would the user rate the movie {} on a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5.0 (0.5 being lowest and 5.0 being highest)?',
     }
 
-    return versioned_descriptions[task_desc_version].format(dataset.get_movie_name(movie_id))
+    movie_info = get_movie_info(dataset=dataset, movie_id=movie_id, with_genre=with_genre)
+    return versioned_descriptions[task_desc_version].format(movie_info)
 
 
 def generate_zeroshot_prompt(
     dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, likes_count: int, dislikes_count: int, with_genre: bool, seed: int
 ) -> str:
-    task_description = get_task_description(dataset=dataset, movie_id=movie_id, task_desc_version=task_desc_version)
+    task_description = get_task_description(dataset=dataset, movie_id=movie_id, task_desc_version=task_desc_version, with_genre=with_genre)
 
     if with_context:
         context = get_context(dataset=dataset, user_id=user_id, likes_first=likes_first, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, seed=seed)
