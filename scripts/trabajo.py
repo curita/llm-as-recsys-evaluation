@@ -5,6 +5,7 @@ import logging
 
 import click
 import pandas as pd
+import numpy as np
 from tqdm.auto import tqdm
 from transformers import pipeline
 from torch.utils.data import Dataset
@@ -15,13 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 class MovieLensDataSet:
-    def __init__(self, training_ratio: float, seed: int) -> None:
+    def __init__(self, training_ratio: float) -> None:
         self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
         self.movies_df = pd.read_csv("ml-latest-small/movies.csv")
         self.normalize_movie_titles()
 
         training_size = int(len(self.ratings_df) * training_ratio)
-        self.training_df = self.ratings_df.sample(n=training_size, replace=False, random_state=seed)
+        self.training_df = self.ratings_df.sample(n=training_size, replace=False)
         self.testing_df = self.ratings_df.loc[self.ratings_df.index.difference(self.training_df.index)]
 
     def normalize_movie_titles(self):
@@ -194,7 +195,8 @@ def parse_model_output(output: str) -> bool:
 def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating):
     logger.info(f"Run {dataset_seed=} {training_ratio=} {batch_size=} {prompt_seed=} {model=} {likes_count=} {dislikes_count=} {with_context=} {likes_first=} {task_desc_version=} {shot=} {with_genre=} {with_global_rating=}.")
     logger.info("Creating dataset...")
-    dataset = MovieLensDataSet(seed=dataset_seed, training_ratio=training_ratio)
+    np.random.seed(dataset_seed)
+    dataset = MovieLensDataSet(training_ratio=training_ratio)
     logger.info("Generating prompts...")
     prompts = [
       generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, shot=shot, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, with_global_rating=with_global_rating, seed=prompt_seed)
