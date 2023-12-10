@@ -53,7 +53,6 @@ def get_rated_movies(
     user_id: int,
     n: int,
     rating: float,
-    seed: int,
 ) -> list[int]:
     # XXX: Fallback to close ratings if there are not enough movies to fill that sample
     rated_movies = dataset.ratings_df[
@@ -64,7 +63,7 @@ def get_rated_movies(
 
     n = min(len(rated_movies), n)
     return (
-        rated_movies["movieId"].sample(n=n, random_state=seed, replace=False).to_list()
+        rated_movies["movieId"].sample(n=n, replace=False).to_list()
     )
 
 
@@ -88,7 +87,7 @@ def get_rated_movies_context(dataset: MovieLensDataSet, rating: float, sample: l
     return context
 
 
-def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, likes_count: int, dislikes_count: int, with_genre: bool, with_global_rating: bool, seed: int):
+def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, likes_count: int, dislikes_count: int, with_genre: bool, with_global_rating: bool):
     user_max_rating = dataset.ratings_df[dataset.ratings_df["userId"] == user_id]["rating"].max()
     user_min_rating = dataset.ratings_df[dataset.ratings_df["userId"] == user_id]["rating"].min()
 
@@ -97,10 +96,10 @@ def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, like
         user_min_rating = 0.0
 
     likes_sample = get_rated_movies(
-        dataset=dataset, user_id=user_id, n=likes_count, rating=user_max_rating, seed=seed
+        dataset=dataset, user_id=user_id, n=likes_count, rating=user_max_rating
     )
     dislikes_sample = get_rated_movies(
-        dataset=dataset, user_id=user_id, n=dislikes_count, rating=user_min_rating, seed=seed
+        dataset=dataset, user_id=user_id, n=dislikes_count, rating=user_min_rating
     )
 
     assert likes_sample or dislikes_sample
@@ -135,12 +134,12 @@ def get_task_description(dataset: MovieLensDataSet, movie_id: int, task_desc_ver
 
 
 def generate_zeroshot_prompt(
-    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, likes_count: int, dislikes_count: int, with_genre: bool, with_global_rating: bool, seed: int
+    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, likes_count: int, dislikes_count: int, with_genre: bool, with_global_rating: bool
 ) -> str:
     task_description = get_task_description(dataset=dataset, movie_id=movie_id, task_desc_version=task_desc_version, with_genre=with_genre, with_global_rating=with_global_rating)
 
     if with_context:
-        context = get_context(dataset=dataset, user_id=user_id, likes_first=likes_first, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, with_global_rating=with_global_rating, seed=seed)
+        context = get_context(dataset=dataset, user_id=user_id, likes_first=likes_first, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, with_global_rating=with_global_rating)
         # XXX: Remove extra point after context and rerun tests.
         return f"{context}.\n\n{task_description}"
 
@@ -148,14 +147,12 @@ def generate_zeroshot_prompt(
 
 
 def generate_prompt(
-    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, shot: int, likes_count: int, dislikes_count: int, with_genre: bool, with_global_rating: bool, seed: int
+    dataset: MovieLensDataSet, user_id: int, movie_id: int, with_context: bool, likes_first: bool, task_desc_version: int, shot: int, likes_count: int, dislikes_count: int, with_genre: bool, with_global_rating: bool
 ):
     # XXX: Convert everything into a class so I don't need to pass the arguments around.
-    kwargs = {"dataset": dataset, "with_context": with_context, "likes_first": likes_first, "task_desc_version": task_desc_version, "likes_count": likes_count, "dislikes_count": dislikes_count, "with_genre": with_genre, "with_global_rating": with_global_rating, "seed": seed}
+    kwargs = {"dataset": dataset, "with_context": with_context, "likes_first": likes_first, "task_desc_version": task_desc_version, "likes_count": likes_count, "dislikes_count": dislikes_count, "with_genre": with_genre, "with_global_rating": with_global_rating}
     prompt = ""
-    # XXX: Set an initial state in the random library instead.
-    # Reference: https://stackoverflow.com/questions/52375356/is-there-a-way-to-set-random-state-for-all-pandas-function
-    example_ratings = dataset.training_df.sample(n=shot, replace=False, random_state=(seed + user_id + (movie_id * dataset.ratings_df["userId"].nunique())))
+    example_ratings = dataset.training_df.sample(n=shot, replace=False)
     for example in example_ratings.itertuples():
         prompt += generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, **kwargs)
         prompt += f'\n{example.rating}\n\n\n'
@@ -198,8 +195,9 @@ def main(dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_cou
     np.random.seed(dataset_seed)
     dataset = MovieLensDataSet(training_ratio=training_ratio)
     logger.info("Generating prompts...")
+    np.random.seed(prompt_seed)
     prompts = [
-      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, shot=shot, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, with_global_rating=with_global_rating, seed=prompt_seed)
+      generate_prompt(dataset=dataset, user_id=row.userId, movie_id=row.movieId, with_context=with_context, likes_first=likes_first, task_desc_version=task_desc_version, shot=shot, likes_count=likes_count, dislikes_count=dislikes_count, with_genre=with_genre, with_global_rating=with_global_rating)
       for row in dataset.testing_df.itertuples()
     ]
     logger.info(f"Prompt Example:\n{prompts[0]}")
