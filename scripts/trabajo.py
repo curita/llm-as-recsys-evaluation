@@ -82,11 +82,11 @@ class PromptGenerator:
             rated_movies["movieId"].sample(n=n, replace=False).to_list()
         )
 
-    def get_movie_info(self, movie_id: int) -> str:
+    def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
-        if self.with_genre:
+        if with_genre:
             info += f' ({"|".join(self.dataset.get_movie_genres(movie_id))})'
-        if self.with_global_rating:
+        if with_global_rating:
             info += f' (Average rating: {self.dataset.get_movie_global_rating(movie_id)} stars out of 5)'
         return info
 
@@ -94,7 +94,7 @@ class PromptGenerator:
         context = ""
         prefix = initial_prefix
         for x in sample:
-            movie_info = self.get_movie_info(movie_id=x)
+            movie_info = self.get_movie_info(movie_id=x, with_genre=self.with_genre, with_global_rating=False)
             context += f'{prefix} user rated with {rating} stars the movie {movie_info}.'
             prefix = " The"
 
@@ -141,7 +141,7 @@ class PromptGenerator:
             2: 'How would the user rate the movie {} on a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5.0?',
         }
 
-        movie_info = self.get_movie_info(movie_id=movie_id)
+        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating)
         return versioned_descriptions[self.task_desc_version].format(movie_info)
 
     def generate_zeroshot_prompt(self, user_id: int, movie_id: int) -> str:
