@@ -15,6 +15,9 @@ from sklearn.metrics import mean_squared_error, classification_report
 logger = logging.getLogger(__name__)
 
 
+def round_to_nearest_half(number):
+    return round(number * 2) / 2
+
 class MovieLensDataSet:
     def __init__(self, training_ratio: float) -> None:
         self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
@@ -45,7 +48,7 @@ class MovieLensDataSet:
         return self.movies_df[self.movies_df["movieId"] == movie_id]["genres"].iloc[0].split("|")
 
     def get_movie_global_rating(self, movie_id: int) -> float:
-        return self.ratings_df[self.ratings_df["movieId"] == movie_id]["rating"].median()
+        return round_to_nearest_half(self.ratings_df[self.ratings_df["movieId"] == movie_id]["rating"].median())
     
 
 class PromptGenerator:
