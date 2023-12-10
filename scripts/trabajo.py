@@ -125,8 +125,8 @@ def get_context(dataset: MovieLensDataSet, user_id: int, likes_first: bool, like
 
 def get_task_description(dataset: MovieLensDataSet, movie_id: int, task_desc_version: int, with_genre: bool, with_global_rating: bool):
     versioned_descriptions = {
-        1: 'On the scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5 (0.5 being lowest and 5 being highest), how would the user rate the movie {}?',
-        2: 'How would the user rate the movie {} on a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5.0 (0.5 being lowest and 5.0 being highest)?',
+        1: 'On a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, how would the user rate the movie {}?',
+        2: 'How would the user rate the movie {} on a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5.0?',
     }
 
     movie_info = get_movie_info(dataset=dataset, movie_id=movie_id, with_genre=with_genre, with_global_rating=with_global_rating)
