@@ -146,8 +146,7 @@ class PromptGenerator:
 
         if self.with_context:
             context = self.get_context(user_id=user_id)
-            # XXX: Remove extra point after context and rerun tests.
-            return f"{context}.\n\n{task_description}"
+            return f"{context}\n\n{task_description}"
 
         return task_description
 
