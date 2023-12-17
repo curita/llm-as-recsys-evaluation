@@ -24,8 +24,7 @@ class MovieLensDataSet:
         self.movies_df = pd.read_csv("ml-latest-small/movies.csv")
         self.normalize_movie_titles()
 
-        training_size = int(len(self.ratings_df) * training_ratio)
-        self.training_df = self.ratings_df.sample(n=training_size, replace=False)
+        self.training_df = self.ratings_df.sample(frac=training_ratio, replace=False)
         self.testing_df = self.ratings_df.loc[self.ratings_df.index.difference(self.training_df.index)]
 
     def normalize_movie_titles(self):
@@ -71,8 +70,8 @@ class PromptGenerator:
         rating: float,
     ) -> list[int]:
         # XXX: Fallback to close ratings if there are not enough movies to fill that sample
-        rated_movies = self.dataset.ratings_df[
-            (self.dataset.ratings_df["userId"] == user_id) & (self.dataset.ratings_df["rating"] == rating)
+        rated_movies = self.dataset.training_df[
+            (self.dataset.training_df["userId"] == user_id) & (self.dataset.training_df["rating"] == rating)
         ]
         if len(rated_movies) == 0:
             return []
@@ -101,8 +100,8 @@ class PromptGenerator:
         return context
 
     def get_context(self, user_id: int) -> str:
-        user_max_rating = self.dataset.ratings_df[self.dataset.ratings_df["userId"] == user_id]["rating"].max()
-        user_min_rating = self.dataset.ratings_df[self.dataset.ratings_df["userId"] == user_id]["rating"].min()
+        user_max_rating = self.dataset.training_df[self.dataset.training_df["userId"] == user_id]["rating"].max()
+        user_min_rating = self.dataset.training_df[self.dataset.training_df["userId"] == user_id]["rating"].min()
 
         if user_max_rating == user_min_rating:
             # There are no 0.0 ratings, so this essentially turns off the dislikes
