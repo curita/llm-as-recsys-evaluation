@@ -221,11 +221,11 @@ def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, like
     output_folder.mkdir(parents=True, exist_ok=True)
 
     with open(output_folder / "results.csv", "w", newline="") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "Output", "Prediction", "Truth"])
+        writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "MovieID", "UserID", "Output", "Prediction", "Truth"])
 
         writer.writeheader()
         for prmpt, out, pred, row in zip(prompts, outputs, predictions, dataset.testing_df.itertuples()):
-            writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "Output": out, "Prediction": str(pred), "Truth": str(row.rating)})
+            writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "MovieID": row.movieId, "UserID": row.userId, "Output": out, "Prediction": str(pred), "Truth": str(row.rating)})
 
     logger.info("Reporting metrics...")
     logger.info(f"RMSE: {mean_squared_error(truth, predictions, squared=False)}")
