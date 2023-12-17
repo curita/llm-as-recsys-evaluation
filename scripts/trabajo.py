@@ -8,6 +8,7 @@ import pandas as pd
 import numpy as np
 from tqdm.auto import tqdm
 from transformers import pipeline
+import torch
 from torch.utils.data import Dataset
 from sklearn.metrics import mean_squared_error, classification_report
 
@@ -175,7 +176,12 @@ class MockListDataset(Dataset):
 
 
 def parse_model_output(output: str) -> bool:
-    return float(re.findall(r"(\d(?:.\d)?)(?: stars)?", output)[0])
+    try:
+        for string, replacement in {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", ",": "."}.items():
+            output = output.replace(string, replacement)
+        return float(re.findall(r"(\d+(?:.\d+)?)", output)[0])
+    except Exception:
+        raise ValueError(output)
 
 @click.command()
 @click.option("--dataset-seed", default=0, type=int)
@@ -191,8 +197,9 @@ def parse_model_output(output: str) -> bool:
 @click.option("--shot", default=0, type=int)
 @click.option("--with-genre/--without-genre", default=False)
 @click.option("--with-global-rating/--without-global-rating", default=False)
+@click.option("--temperature", default=0, type=float)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating):
+def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature):
 
     logger.info(f"Run {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
     logger.info("Creating dataset...")
@@ -200,6 +207,7 @@ def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, like
     dataset = MovieLensDataSet(training_ratio=training_ratio)
     logger.info("Generating prompts...")
     np.random.seed(prompt_seed)
+    torch.manual_seed(prompt_seed)
     prompt_generator = PromptGenerator(dataset=dataset, **ctx.params)
     prompts = [
       prompt_generator(user_id=row.userId, movie_id=row.movieId)
@@ -209,7 +217,13 @@ def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, like
     logger.info("Initializing text-generation pipeline...")
     text2textgenerator = pipeline("text2text-generation", model=model, device_map="auto")
     logger.info("Running model...")
-    outputs = [p[0] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, do_sample=False), total=len(prompts))]
+    model_parameters = {}
+    if temperature == 0.0:
+        model_parameters["do_sample"] = False
+    else:
+        model_parameters["do_sample"] = True
+        model_parameters["temperature"] = temperature
+    outputs = [p[0] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
     logger.info("Parsing outputs...")
     predictions = [parse_model_output(o["generated_text"]) for o in outputs]
     truth = [row.rating for row in dataset.testing_df.itertuples()]
