@@ -64,24 +64,6 @@ class PromptGenerator:
         self.with_context = with_context
         self.shot = shot
 
-    def get_rated_movies(
-        self,
-        user_id: int,
-        n: int,
-        rating: float,
-    ) -> list[int]:
-        # XXX: Fallback to close ratings if there are not enough movies to fill that sample
-        rated_movies = self.dataset.training_df[
-            (self.dataset.training_df["userId"] == user_id) & (self.dataset.training_df["rating"] == rating)
-        ]
-        if len(rated_movies) == 0:
-            return []
-
-        n = min(len(rated_movies), n)
-        return (
-            rated_movies["movieId"].sample(n=n, replace=False).to_list()
-        )
-
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
         if with_genre:
@@ -90,48 +72,40 @@ class PromptGenerator:
             info += f' (Average rating: {self.dataset.get_movie_global_rating(movie_id)} stars out of 5)'
         return info
 
-    def get_rated_movies_context(self, rating: float, sample: list[int], initial_prefix: str = "A") -> str:
+    def get_rated_movies_context(self, ratings_sample: pd.DataFrame, initial_prefix: str = "A") -> str:
         context = ""
         prefix = initial_prefix
-        for x in sample:
-            movie_info = self.get_movie_info(movie_id=x, with_genre=self.with_genre, with_global_rating=False)
-            context += f'{prefix} user rated with {rating} stars the movie {movie_info}.'
+        for rating in ratings_sample.itertuples():
+            movie_info = self.get_movie_info(movie_id=rating.movieId, with_genre=self.with_genre, with_global_rating=False)
+            context += f'{prefix} user rated with {rating.rating} stars the movie {movie_info}.'
             prefix = " The"
 
         return context
 
     def get_context(self, user_id: int) -> str:
-        user_max_rating = self.dataset.training_df[self.dataset.training_df["userId"] == user_id]["rating"].max()
-        user_min_rating = self.dataset.training_df[self.dataset.training_df["userId"] == user_id]["rating"].min()
+        # Shuffled user ratings
+        user_ratings = self.dataset.training_df[self.dataset.training_df["userId"] == user_id].sample(frac=1).sort_values("rating", ascending=False)
 
-        if user_max_rating == user_min_rating:
-            # There are no 0.0 ratings, so this essentially turns off the dislikes
-            user_min_rating = 0.0
+        likes_sample = user_ratings[user_ratings.rating >= 4][:self.likes_count]
+        dislikes_sample = user_ratings[user_ratings.rating <= 2][-self.dislikes_count:][::-1]
 
-        likes_sample = self.get_rated_movies(
-            user_id=user_id, n=self.likes_count, rating=user_max_rating
-        )
-        dislikes_sample = self.get_rated_movies(
-            user_id=user_id, n=self.dislikes_count, rating=user_min_rating
-        )
+        assert len(likes_sample) or len(dislikes_sample)
 
-        assert likes_sample or dislikes_sample
-
-        rated_context_data = [(user_max_rating, likes_sample), (user_min_rating, dislikes_sample)]
+        rated_context_data = [likes_sample, dislikes_sample]
 
         if not self.likes_first:
             rated_context_data = reversed(rated_context_data)
 
         context = ""
-        for rating, sample in rated_context_data:
-            if not sample:
+        for sample in rated_context_data:
+            if not len(sample):
                 continue
 
             if not context:
                 prefix = "A"
             else:
                 prefix = "\n\nThe"
-            context += self.get_rated_movies_context(rating=rating, sample=sample, initial_prefix=prefix)
+            context += self.get_rated_movies_context(ratings_sample=sample, initial_prefix=prefix)
 
         return context
 
