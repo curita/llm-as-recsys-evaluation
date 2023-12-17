@@ -223,9 +223,9 @@ def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, like
     else:
         model_parameters["do_sample"] = True
         model_parameters["temperature"] = temperature
-    outputs = [p[0] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
+    outputs = [p[0]["generated_text"] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
     logger.info("Parsing outputs...")
-    predictions = [parse_model_output(o["generated_text"]) for o in outputs]
+    predictions = [parse_model_output(o) for o in outputs]
     truth = [row.rating for row in dataset.testing_df.itertuples()]
 
     logger.info("Dumping results...")
@@ -233,6 +233,8 @@ def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, like
     folder_name = f"experiment_{'_'.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}".replace("/", ":")
     output_folder = Path(f"results") / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Path: {output_folder / 'results.csv'}")
 
     with open(output_folder / "results.csv", "w", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "MovieID", "UserID", "Output", "Prediction", "Truth"])
