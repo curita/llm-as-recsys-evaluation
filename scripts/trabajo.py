@@ -48,8 +48,11 @@ class MovieLensDataSet:
     def get_movie_genres(self, movie_id: int) -> list[str]:
         return self.movies_df[self.movies_df["movieId"] == movie_id]["genres"].iloc[0].split("|")
 
-    def get_movie_global_rating(self, movie_id: int) -> float:
-        return round_to_nearest_half(self.ratings_df[self.ratings_df["movieId"] == movie_id]["rating"].median())
+    def get_movie_global_rating(self, movie_id: int) -> float | None:
+        movie_ratings = self.training_df[self.training_df["movieId"] == movie_id]["ratings"]
+        if not len(movie_ratings):
+            return
+        return round_to_nearest_half(movie_ratings.median())
     
 
 class PromptGenerator:
@@ -69,8 +72,8 @@ class PromptGenerator:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
         if with_genre:
             info += f' ({"|".join(self.dataset.get_movie_genres(movie_id))})'
-        if with_global_rating:
-            info += f' (Average rating: {self.dataset.get_movie_global_rating(movie_id)} stars out of 5)'
+        if with_global_rating and (global_rating := self.dataset.get_movie_global_rating(movie_id)):
+            info += f' (Average rating: {global_rating} stars out of 5)'
         return info
 
     def get_rated_movies_context(self, ratings_sample: pd.DataFrame, initial_prefix: str = "A") -> str:
