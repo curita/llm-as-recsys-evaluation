@@ -1,3 +1,4 @@
+from collections import defaultdict
 from pathlib import Path
 import re
 import csv
@@ -220,6 +221,13 @@ def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, like
     logger.info("Reporting metrics...")
     logger.info(f"RMSE: {mean_squared_error(truth, predictions, squared=False)}")
     logger.info(f"Classification report:\n{classification_report([str(x) for x in truth], [str(x) for x in predictions])}")
+
+    POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+    value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
+    for p in predictions:
+        value_counts[p] += 1
+    distribution = {rating: round((count * 100 / len(predictions)), 2) for rating, count in sorted(value_counts.items())}
+    logger.info(f"Distribution: {distribution}")
 
 
 if __name__ == "__main__":
