@@ -133,7 +133,8 @@ class PromptGenerator:
 
     def __call__(self, user_id: int, movie_id: int) -> str:
         prompt = ""
-        example_ratings = self.dataset.training_df.sample(n=self.shot, replace=False)
+        movie_ratings = self.dataset.training_df[self.dataset.training_df["movieId"] == movie_id]
+        example_ratings = movie_ratings.sample(n=min(self.shot, len(movie_ratings)), replace=False)
         for example in example_ratings.itertuples():
             prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId)
             prompt += f'\n{example.rating}\n\n\n'
