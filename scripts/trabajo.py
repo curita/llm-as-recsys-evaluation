@@ -22,7 +22,7 @@ def round_to_nearest_half(number):
     return round(number * 2) / 2
 
 class MovieLensDataSet:
-    def __init__(self, training_ratio: float, popularity: tuple[str]) -> None:
+    def __init__(self, training_ratio: float, training_popularity: tuple[str], popularity: tuple[str]) -> None:
         self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
         self.movies_df = pd.read_csv("ml-latest-small/movies.csv")
         self.normalize_movie_titles()
@@ -33,6 +33,9 @@ class MovieLensDataSet:
 
         self.training_df = self.ratings_df.sample(frac=training_ratio, replace=False)
         self.testing_df = self.ratings_df.loc[self.ratings_df.index.difference(self.training_df.index)]
+
+        if training_popularity:
+            self.training_df = self.training_df[self.training_df.popularity.isin(training_popularity)]
 
     def normalize_movie_titles(self):
         self.movies_df["normalize_title"] = self.movies_df["title"].str.replace(
@@ -189,6 +192,7 @@ FILENAME_PARAMETERS = {
     "R": "with_global_rating",
     "T": "temperature",
     "P": "popularity",
+    "TP": "training_popularity",
 }
 
 
@@ -208,13 +212,14 @@ FILENAME_PARAMETERS = {
 @click.option("--with-global-rating/--without-global-rating", default=False)
 @click.option("--temperature", default=0, type=float)
 @click.option("--popularity", multiple=True)
+@click.option("--training-popularity", multiple=True)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity):
+def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity):
 
     logger.info(f"Run {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
     logger.info("Creating dataset...")
     np.random.seed(dataset_seed)
-    dataset = MovieLensDataSet(training_ratio=training_ratio, popularity=popularity)
+    dataset = MovieLensDataSet(training_ratio=training_ratio, training_popularity=training_popularity, popularity=popularity)
     logger.info("Generating prompts...")
     np.random.seed(prompt_seed)
     torch.manual_seed(prompt_seed)
