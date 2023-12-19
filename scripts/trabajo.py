@@ -22,10 +22,14 @@ def round_to_nearest_half(number):
     return round(number * 2) / 2
 
 class MovieLensDataSet:
-    def __init__(self, training_ratio: float) -> None:
+    def __init__(self, training_ratio: float, popularity: tuple[str]) -> None:
         self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
         self.movies_df = pd.read_csv("ml-latest-small/movies.csv")
         self.normalize_movie_titles()
+        self.categorize_movie_popularity()
+
+        if popularity:
+            self.ratings_df = self.ratings_df[self.ratings_df.popularity.isin(popularity)]
 
         self.training_df = self.ratings_df.sample(frac=training_ratio, replace=False)
         self.testing_df = self.ratings_df.loc[self.ratings_df.index.difference(self.training_df.index)]
@@ -40,6 +44,14 @@ class MovieLensDataSet:
         self.movies_df["normalize_title"] = self.movies_df[
             "normalize_title"
         ].str.replace(r"^(.+), A (\(\d{4}\))$", r"A \1 \2", regex=True)
+
+    def categorize_movie_popularity(self):
+        rating_counts = self.ratings_df.groupby('movieId').count().userId.to_frame().rename(columns={'userId': 'ratingCount'})
+        rating_counts["popularity"] = pd.cut(
+            rating_counts.ratingCount, [0, 2, 10, 50, 300],
+            labels=["rare", "unfrequent", "normal", "very_frequent"]
+        )
+        self.ratings_df = self.ratings_df.merge(rating_counts, on='movieId', how="left")
 
     def get_movie_name(self, movie_id: int) -> str:
         return self.movies_df[self.movies_df["movieId"] == movie_id][
@@ -176,6 +188,7 @@ FILENAME_PARAMETERS = {
     "G": "with_genre",
     "R": "with_global_rating",
     "T": "temperature",
+    "P": "popularity",
 }
 
 
@@ -194,13 +207,14 @@ FILENAME_PARAMETERS = {
 @click.option("--with-genre/--without-genre", default=False)
 @click.option("--with-global-rating/--without-global-rating", default=False)
 @click.option("--temperature", default=0, type=float)
+@click.option("--popularity", multiple=True)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature):
+def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity):
 
     logger.info(f"Run {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
     logger.info("Creating dataset...")
     np.random.seed(dataset_seed)
-    dataset = MovieLensDataSet(training_ratio=training_ratio)
+    dataset = MovieLensDataSet(training_ratio=training_ratio, popularity=popularity)
     logger.info("Generating prompts...")
     np.random.seed(prompt_seed)
     torch.manual_seed(prompt_seed)
