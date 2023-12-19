@@ -1,4 +1,5 @@
 from collections import defaultdict
+import json
 from pathlib import Path
 import re
 import csv
@@ -162,6 +163,22 @@ def parse_model_output(output: str) -> bool:
     except Exception:
         raise ValueError(output)
 
+FILENAME_PARAMETERS = {
+    "RATIO": "training_ratio",
+    "SEED": "prompt_seed",
+    "M": "model",
+    "L": "likes_count",
+    "D": "dislikes_count",
+    "C": "with_context",
+    "F": "likes_first",
+    "V": "task_desc_version",
+    "S": "shot",
+    "G": "with_genre",
+    "R": "with_global_rating",
+    "T": "temperature",
+}
+
+
 @click.command()
 @click.option("--dataset-seed", default=0, type=int)
 @click.option("--training-ratio", default=0.8, type=float)
@@ -209,18 +226,21 @@ def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, like
 
     logger.info("Dumping results...")
 
-    folder_name = f"experiment_{'_'.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}".replace("/", ":")
+    folder_name = f"experiment_{'_'.join(k + '=' + str(ctx.params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace("/", ":")
     output_folder = Path(f"results") / folder_name
     output_folder.mkdir(parents=True, exist_ok=True)
+    output_file = output_folder / "results.csv"
 
-    logger.info(f"Path: {output_folder / 'results.csv'}")
+    logger.info(f"Path: {output_file}")
 
-    with open(output_folder / "results.csv", "w", newline="") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "MovieID", "UserID", "Output", "Prediction", "Truth"])
+    with open(output_file, "w", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "MovieID", "UserID", "Output", "Prediction", "Truth", "Parameters"])
 
         writer.writeheader()
+        parameters = json.dumps(ctx.params)
         for prmpt, out, pred, row in zip(prompts, outputs, predictions, dataset.testing_df.itertuples()):
-            writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "MovieID": row.movieId, "UserID": row.userId, "Output": out, "Prediction": str(pred), "Truth": str(row.rating)})
+            writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "MovieID": row.movieId, "UserID": row.userId, "Output": out, "Prediction": str(pred), "Truth": str(row.rating), "Parameters": parameters})
+            parameters = ""
 
     logger.info("Reporting metrics...")
     logger.info(f"RMSE: {mean_squared_error(truth, predictions, squared=False)}")
