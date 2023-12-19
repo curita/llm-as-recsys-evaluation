@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 def round_to_nearest_half(number):
     return round(number * 2) / 2
 
+
+FREQUENCY_CATEGORIES = ["rare", "unfrequent", "normal", "very_frequent"]
+
 class MovieLensDataSet:
     def __init__(self, training_ratio: float, training_popularity: tuple[str], popularity: tuple[str]) -> None:
         self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
@@ -52,7 +55,7 @@ class MovieLensDataSet:
         rating_counts = self.ratings_df.groupby('movieId').count().userId.to_frame().rename(columns={'userId': 'ratingCount'})
         rating_counts["popularity"] = pd.cut(
             rating_counts.ratingCount, [0, 2, 10, 50, 300],
-            labels=["rare", "unfrequent", "normal", "very_frequent"]
+            labels=FREQUENCY_CATEGORIES,
         )
         self.ratings_df = self.ratings_df.merge(rating_counts, on='movieId', how="left")
 
@@ -211,8 +214,8 @@ FILENAME_PARAMETERS = {
 @click.option("--with-genre/--without-genre", default=False)
 @click.option("--with-global-rating/--without-global-rating", default=False)
 @click.option("--temperature", default=0, type=float)
-@click.option("--popularity", multiple=True)
-@click.option("--training-popularity", multiple=True)
+@click.option("--popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
+@click.option("--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.pass_context
 def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity):
 
