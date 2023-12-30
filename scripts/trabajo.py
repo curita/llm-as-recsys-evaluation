@@ -22,6 +22,7 @@ def round_to_nearest_half(number):
     return round(number * 2) / 2
 
 
+POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 FREQUENCY_CATEGORIES = ["rare", "unfrequent", "normal", "very_frequent"]
 
 class MovieLensDataSet:
@@ -134,8 +135,8 @@ class PromptGenerator:
 
     def get_task_description(self, movie_id: int) -> str:
         versioned_descriptions = {
-            1: 'On a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, how would the user rate the movie {}?',
-            2: 'How would the user rate the movie {} on a scale of 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5.0?',
+            1: f"On a scale of {', '.join(str(x) for x in POSSIBLE_VALUES)}, how would the user rate the movie {{}}?",
+            2: f"How would the user rate the movie {{}} on a scale of {', '.join(str(x) for x in POSSIBLE_VALUES)}?",
         }
 
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating)
@@ -219,8 +220,6 @@ FILENAME_PARAMETERS = {
 @click.option("--runs", default=1, type=int)
 @click.pass_context
 def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity, runs):
-
-    POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
