@@ -12,7 +12,7 @@ from tqdm.auto import tqdm
 from transformers import pipeline
 import torch
 from torch.utils.data import Dataset
-from sklearn.metrics import mean_squared_error, classification_report
+from sklearn.metrics import mean_squared_error, classification_report, precision_recall_fscore_support
 
 
 logger = logging.getLogger(__name__)
@@ -183,7 +183,7 @@ def parse_model_output(output: str) -> bool:
 
 FILENAME_PARAMETERS = {
     "RATIO": "training_ratio",
-    "SEED": "prompt_seed",
+    "SEED": "run_seed",
     "M": "model",
     "L": "likes_count",
     "D": "dislikes_count",
@@ -203,7 +203,7 @@ FILENAME_PARAMETERS = {
 @click.option("--dataset-seed", default=0, type=int)
 @click.option("--training-ratio", default=0.8, type=float)
 @click.option("--batch-size", default=8, type=int)
-@click.option("--prompt-seed", default=0, type=int)
+@click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
@@ -216,64 +216,107 @@ FILENAME_PARAMETERS = {
 @click.option("--temperature", default=0, type=float)
 @click.option("--popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.option("--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
+@click.option("--runs", default=1, type=int)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, prompt_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity, runs):
 
-    logger.info(f"Run {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
+    POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
+
+    logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
+
     logger.info("Creating dataset...")
     np.random.seed(dataset_seed)
     dataset = MovieLensDataSet(training_ratio=training_ratio, training_popularity=training_popularity, popularity=popularity)
-    logger.info("Generating prompts...")
-    np.random.seed(prompt_seed)
-    torch.manual_seed(prompt_seed)
-    prompt_generator = PromptGenerator(dataset=dataset, **ctx.params)
-    prompts = [
-      prompt_generator(user_id=row.userId, movie_id=row.movieId)
-      for row in dataset.testing_df.itertuples()
-    ]
-    logger.info(f"Prompt Example:\n{prompts[0]}")
-    logger.info("Initializing text-generation pipeline...")
-    text2textgenerator = pipeline("text2text-generation", model=model, device_map="auto")
-    logger.info("Running model...")
-    model_parameters = {}
-    if temperature == 0.0:
-        model_parameters["do_sample"] = False
-    else:
-        model_parameters["do_sample"] = True
-        model_parameters["temperature"] = temperature
-    outputs = [p[0]["generated_text"] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
-    logger.info("Parsing outputs...")
-    predictions = [parse_model_output(o) for o in outputs]
-    truth = [row.rating for row in dataset.testing_df.itertuples()]
 
-    logger.info("Dumping results...")
+    aggregated_rmse = []
+    aggregated_precision = []
+    aggregated_recall = []
+    aggregated_f1 = []
+    aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
 
-    folder_name = f"experiment_{'_'.join(k + '=' + str(ctx.params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace("/", ":")
-    output_folder = Path(f"results") / folder_name
-    output_folder.mkdir(parents=True, exist_ok=True)
-    output_file = output_folder / "results.csv"
+    for x in range(runs):
 
-    logger.info(f"Path: {output_file}")
+        run_params = ctx.params.copy()
+        run_seed = initial_run_seed + x
+        run_params["run_seed"] = run_seed
 
-    with open(output_file, "w", newline="") as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "MovieID", "UserID", "Output", "Prediction", "Truth", "Parameters"])
+        logger.info(f"Run {run_seed=}.")
 
-        writer.writeheader()
-        parameters = json.dumps(ctx.params)
-        for prmpt, out, pred, row in zip(prompts, outputs, predictions, dataset.testing_df.itertuples()):
-            writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "MovieID": row.movieId, "UserID": row.userId, "Output": out, "Prediction": str(pred), "Truth": str(row.rating), "Parameters": parameters})
-            parameters = ""
+        logger.info("Generating prompts...")
+        np.random.seed(run_seed)
+        torch.manual_seed(run_seed)
+        prompt_generator = PromptGenerator(dataset=dataset, **run_params)
+        prompts = [
+            prompt_generator(user_id=row.userId, movie_id=row.movieId)
+            for row in dataset.testing_df.itertuples()
+        ]
+        logger.info(f"Prompt Example:\n{prompts[0]}")
+        logger.info("Initializing text-generation pipeline...")
+        text2textgenerator = pipeline("text2text-generation", model=model, device_map="auto")
+        logger.info("Running model...")
+        model_parameters = {}
+        if temperature == 0.0:
+            model_parameters["do_sample"] = False
+        else:
+            model_parameters["do_sample"] = True
+            model_parameters["temperature"] = temperature
+        outputs = [p[0]["generated_text"] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
+        logger.info("Parsing outputs...")
+        predictions = [parse_model_output(o) for o in outputs]
+        truth = [row.rating for row in dataset.testing_df.itertuples()]
 
-    logger.info("Reporting metrics...")
-    logger.info(f"RMSE: {mean_squared_error(truth, predictions, squared=False)}")
-    logger.info(f"Classification report:\n{classification_report([str(x) for x in truth], [str(x) for x in predictions])}")
+        logger.info("Dumping results...")
 
-    POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
-    value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
-    for p in predictions:
-        value_counts[p] += 1
-    distribution = {rating: round((count * 100 / len(predictions)), 2) for rating, count in sorted(value_counts.items())}
-    logger.info(f"Distribution: {distribution}")
+        folder_name = f"experiment_{'_'.join(k + '=' + str(run_params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace("/", ":")
+        output_folder = Path(f"results") / folder_name
+        output_folder.mkdir(parents=True, exist_ok=True)
+        output_file = output_folder / "results.csv"
+
+        logger.info(f"Path: {output_file}")
+
+        with open(output_file, "w", newline="") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "MovieID", "UserID", "Output", "Prediction", "Truth", "Parameters"])
+
+            writer.writeheader()
+            parameters = json.dumps(run_params)
+            for prmpt, out, pred, row in zip(prompts, outputs, predictions, dataset.testing_df.itertuples()):
+                writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "MovieID": row.movieId, "UserID": row.userId, "Output": out, "Prediction": str(pred), "Truth": str(row.rating), "Parameters": parameters})
+                parameters = ""
+
+        logger.info("Reporting metrics...")
+        rmse = mean_squared_error(truth, predictions, squared=False)
+        logger.info(f"RMSE: {rmse}")
+        aggregated_rmse.append(rmse)
+
+        logger.info(f"Classification report:\n{classification_report([str(x) for x in truth], [str(x) for x in predictions])}")
+        precision, recall, f1, _ = precision_recall_fscore_support([str(x) for x in truth], [str(x) for x in predictions], average="macro")
+        aggregated_precision.append(precision)
+        aggregated_recall.append(recall)
+        aggregated_f1.append(f1)
+
+        value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
+        for p in predictions:
+            value_counts[p] += 1
+            aggregated_value_counts[p] += 1
+        distribution = {rating: round((count * 100 / len(predictions)), 2) for rating, count in sorted(value_counts.items())}
+        logger.info(f"Distribution: {distribution}")
+
+    logger.info("Aggregated stats.")
+    rmse_s = pd.Series(aggregated_rmse)
+    logger.info(f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}")
+
+    precision_s = pd.Series(aggregated_precision)
+    logger.info(f"Aggregated Precision-macro. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}")
+
+    recall_s = pd.Series(aggregated_recall)
+    logger.info(f"Aggregated Recall-macro. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}")
+
+    f1_s = pd.Series(aggregated_f1)
+    logger.info(f"Aggregated F1-macro. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
+
+    total = sum(aggregated_value_counts.values())
+    aggregated_distribution = {rating: round((count * 100 / total), 2) for rating, count in sorted(aggregated_value_counts.items())}
+    logger.info(f"Aggregated Distribution: {aggregated_distribution}")
 
 
 if __name__ == "__main__":
