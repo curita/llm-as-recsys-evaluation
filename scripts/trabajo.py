@@ -77,7 +77,7 @@ class MovieLensDataSet:
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shot: int, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shot: int, keep_trailing_zeroes: bool, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -87,6 +87,7 @@ class PromptGenerator:
         self.task_desc_version = task_desc_version
         self.with_context = with_context
         self.shot = shot
+        self.keep_trailing_zeroes = keep_trailing_zeroes
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -96,12 +97,18 @@ class PromptGenerator:
             info += f' (Average rating: {global_rating} stars out of 5)'
         return info
 
+    def convert_rating_to_str(self, rating: float) -> str:
+        if self.keep_trailing_zeroes:
+            return str(rating)
+        else:
+            return f"{rating:g}"
+
     def get_rated_movies_context(self, ratings_sample: pd.DataFrame, initial_prefix: str = "A") -> str:
         context = ""
         prefix = initial_prefix
         for rating in ratings_sample.itertuples():
             movie_info = self.get_movie_info(movie_id=rating.movieId, with_genre=self.with_genre, with_global_rating=False)
-            context += f'{prefix} user rated with {rating.rating} stars the movie {movie_info}.'
+            context += f'{prefix} user rated with {self.convert_rating_to_str(rating.rating)} stars the movie {movie_info}.'
             prefix = " The"
 
         return context
@@ -135,8 +142,8 @@ class PromptGenerator:
 
     def get_task_description(self, movie_id: int) -> str:
         versioned_descriptions = {
-            1: f"On a scale of {', '.join(str(x) for x in POSSIBLE_VALUES)}, how would the user rate the movie {{}}?",
-            2: f"How would the user rate the movie {{}} on a scale of {', '.join(str(x) for x in POSSIBLE_VALUES)}?",
+            1: f"On a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}, how would the user rate the movie {{}}?",
+            2: f"How would the user rate the movie {{}} on a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}?",
         }
 
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating)
@@ -197,6 +204,7 @@ FILENAME_PARAMETERS = {
     "T": "temperature",
     "P": "popularity",
     "TP": "training_popularity",
+    "Z": "keep_trailing_zeroes",
 }
 
 
@@ -218,8 +226,9 @@ FILENAME_PARAMETERS = {
 @click.option("--popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.option("--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.option("--runs", default=1, type=int)
+@click.option("--keep-trailing-zeroes/--strip-trailing-zeros", default=True)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity, runs):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
