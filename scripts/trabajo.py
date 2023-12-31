@@ -77,7 +77,7 @@ class MovieLensDataSet:
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shot: int, keep_trailing_zeroes: bool, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -86,7 +86,7 @@ class PromptGenerator:
         self.dislikes_count = dislikes_count
         self.task_desc_version = task_desc_version
         self.with_context = with_context
-        self.shot = shot
+        self.shots = shots
         self.keep_trailing_zeroes = keep_trailing_zeroes
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
@@ -161,7 +161,7 @@ class PromptGenerator:
     def __call__(self, user_id: int, movie_id: int) -> str:
         prompt = ""
         movie_ratings = self.dataset.training_df[self.dataset.training_df["movieId"] == movie_id]
-        example_ratings = movie_ratings.sample(n=min(self.shot, len(movie_ratings)), replace=False)
+        example_ratings = movie_ratings.sample(n=min(self.shots, len(movie_ratings)), replace=False)
         for example in example_ratings.itertuples():
             prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId)
             prompt += f'\n{example.rating}\n\n\n'
@@ -198,7 +198,7 @@ FILENAME_PARAMETERS = {
     "C": "with_context",
     "F": "likes_first",
     "V": "task_desc_version",
-    "S": "shot",
+    "S": "shots",
     "G": "with_genre",
     "R": "with_global_rating",
     "T": "temperature",
@@ -219,7 +219,7 @@ FILENAME_PARAMETERS = {
 @click.option("--with-context/--without-context", default=True)
 @click.option("--likes-first/--dislikes-first", default=True)
 @click.option("--task-desc-version", default=1, type=int)
-@click.option("--shot", default=0, type=int)
+@click.option("--shots", default=0, type=int)
 @click.option("--with-genre/--without-genre", default=False)
 @click.option("--with-global-rating/--without-global-rating", default=False)
 @click.option("--temperature", default=0, type=float)
@@ -228,7 +228,7 @@ FILENAME_PARAMETERS = {
 @click.option("--runs", default=1, type=int)
 @click.option("--keep-trailing-zeroes/--strip-trailing-zeros", default=True)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shot, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
