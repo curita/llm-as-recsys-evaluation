@@ -118,7 +118,7 @@ class PromptGenerator:
         user_ratings = self.dataset.training_df[self.dataset.training_df["userId"] == user_id].sample(frac=1).sort_values("rating", ascending=False)
 
         likes_sample = user_ratings[user_ratings.rating >= 4][:self.likes_count]
-        dislikes_sample = user_ratings[user_ratings.rating <= 2][-self.dislikes_count:][::-1]
+        dislikes_sample = user_ratings[user_ratings.rating <= 2][::-1][:self.dislikes_count]
 
         assert len(likes_sample) or len(dislikes_sample)
 
