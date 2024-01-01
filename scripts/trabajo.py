@@ -103,17 +103,18 @@ class PromptGenerator:
         else:
             return f"{rating:g}"
 
-    def get_rated_movies_context(self, ratings_sample: pd.DataFrame, initial_prefix: str = "A") -> str:
+    def get_user_identifier(self, shot: int) -> str:
+        return f'User "{chr(65 + shot)}"'
+
+    def get_rated_movies_context(self, ratings_sample: pd.DataFrame, shot: int) -> str:
         context = ""
-        prefix = initial_prefix
         for rating in ratings_sample.itertuples():
             movie_info = self.get_movie_info(movie_id=rating.movieId, with_genre=self.with_genre, with_global_rating=False)
-            context += f'{prefix} user rated with {self.convert_rating_to_str(rating.rating)} stars the movie {movie_info}.'
-            prefix = " The"
+            context += f'{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating.rating)} stars the movie {movie_info}. '
 
-        return context
+        return context.strip()
 
-    def get_context(self, user_id: int) -> str:
+    def get_context(self, user_id: int, shot: int) -> str:
         # Shuffled user ratings
         user_ratings = self.dataset.training_df[self.dataset.training_df["userId"] == user_id].sample(frac=1).sort_values("rating", ascending=False)
 
@@ -132,29 +133,28 @@ class PromptGenerator:
             if not len(sample):
                 continue
 
-            if not context:
-                prefix = "A"
-            else:
-                prefix = "\n\nThe"
-            context += self.get_rated_movies_context(ratings_sample=sample, initial_prefix=prefix)
+            if context:
+                context += "\n\n"
+
+            context += self.get_rated_movies_context(ratings_sample=sample, shot=shot)
 
         return context
 
-    def get_task_description(self, movie_id: int) -> str:
+    def get_task_description(self, movie_id: int, shot: int) -> str:
         versioned_descriptions = {
-            1: f"On a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}, how would the user rate the movie {{}}?",
-            2: f"How would the user rate the movie {{}} on a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}?",
+            1: f"On a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}, how would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
+            2: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}} on a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}?",
         }
 
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating)
         return versioned_descriptions[self.task_desc_version].format(movie_info)
 
-    def generate_zeroshot_prompt(self, user_id: int, movie_id: int) -> str:
-        task_description = self.get_task_description(movie_id=movie_id)
+    def generate_zeroshot_prompt(self, user_id: int, movie_id: int, shot: int) -> str:
+        task_description = self.get_task_description(movie_id=movie_id, shot=shot)
 
         if self.with_context:
-            context = self.get_context(user_id=user_id)
             return f"{context}\n\n{task_description}"
+            context = self.get_context(user_id=user_id, shot=shot)
 
         return task_description
 
@@ -162,11 +162,12 @@ class PromptGenerator:
         prompt = ""
         movie_ratings = self.dataset.training_df[self.dataset.training_df["movieId"] == movie_id]
         example_ratings = movie_ratings.sample(n=min(self.shots, len(movie_ratings)), replace=False)
-        for example in example_ratings.itertuples():
-            prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId)
+        i = -1
+        for i, example in enumerate(example_ratings.itertuples()):
+            prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, shot=i)
             prompt += f'\n{self.convert_rating_to_str(example.rating)}\n\n\n'
 
-        zero_shot = self.generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id)
+        zero_shot = self.generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id, shot=i + 1)
         prompt += zero_shot
         return prompt
 
