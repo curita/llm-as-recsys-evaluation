@@ -77,7 +77,7 @@ class MovieLensDataSet:
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -88,6 +88,7 @@ class PromptGenerator:
         self.with_context = with_context
         self.shots = shots
         self.keep_trailing_zeroes = keep_trailing_zeroes
+        self.double_range = double_range
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -98,6 +99,9 @@ class PromptGenerator:
         return info
 
     def convert_rating_to_str(self, rating: float) -> str:
+        if self.double_range:
+            rating *= 2
+
         if self.keep_trailing_zeroes:
             return str(rating)
         else:
@@ -182,13 +186,18 @@ class MockListDataset(Dataset):
         return self.original_list[i]
 
 
-def parse_model_output(output: str) -> bool:
+def parse_model_output(output: str, double_range: bool) -> bool:
     try:
         for string, replacement in {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", ",": "."}.items():
             output = output.replace(string, replacement)
-        return float(re.findall(r"(\d+(?:.\d+)?)", output)[0])
+        value = float(re.findall(r"(\d+(?:.\d+)?)", output)[0])
     except Exception:
         raise ValueError(output)
+
+    if double_range:
+        value /= 2
+
+    return value
 
 FILENAME_PARAMETERS = {
     "RATIO": "training_ratio",
@@ -206,6 +215,7 @@ FILENAME_PARAMETERS = {
     "P": "popularity",
     "TP": "training_popularity",
     "Z": "keep_trailing_zeroes",
+    "DO": "double_range",
 }
 
 
@@ -228,8 +238,9 @@ FILENAME_PARAMETERS = {
 @click.option("--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.option("--runs", default=1, type=int)
 @click.option("--keep-trailing-zeroes/--strip-trailing-zeros", default=True)
+@click.option("--double-range/--single-range", default=False)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
@@ -271,7 +282,7 @@ def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model,
             model_parameters["temperature"] = temperature
         outputs = [p[0]["generated_text"] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
         logger.info("Parsing outputs...")
-        predictions = [parse_model_output(o) for o in outputs]
+        predictions = [parse_model_output(o, double_range=double_range) for o in outputs]
         truth = [row.rating for row in dataset.testing_df.itertuples()]
 
         logger.info("Dumping results...")
