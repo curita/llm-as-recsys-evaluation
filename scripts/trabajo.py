@@ -164,7 +164,7 @@ class PromptGenerator:
         example_ratings = movie_ratings.sample(n=min(self.shots, len(movie_ratings)), replace=False)
         for example in example_ratings.itertuples():
             prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId)
-            prompt += f'\n{example.rating}\n\n\n'
+            prompt += f'\n{self.convert_rating_to_str(example.rating)}\n\n\n'
 
         zero_shot = self.generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id)
         prompt += zero_shot
