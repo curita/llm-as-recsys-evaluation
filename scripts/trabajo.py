@@ -1,4 +1,5 @@
 from collections import defaultdict
+from enum import Enum
 import json
 from pathlib import Path
 import re
@@ -75,9 +76,13 @@ class MovieLensDataSet:
         return round_to_nearest_half(movie_ratings.median())
     
 
+class SampleKind(Enum):
+    lowest = "lowest"
+    highest = "highest"
+
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -89,6 +94,7 @@ class PromptGenerator:
         self.shots = shots
         self.keep_trailing_zeroes = keep_trailing_zeroes
         self.double_range = double_range
+        self.sample_header_version = sample_header_version
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -118,6 +124,14 @@ class PromptGenerator:
 
         return context.strip()
 
+    def get_sample_header(self, kind: SampleKind, shot: int) -> str:
+        versioned_headers = {
+            1: "",
+            2: f"Some of {self.get_user_identifier(shot=shot)}'s {kind.value} rated movies:\n",
+        }
+
+        return versioned_headers[self.sample_header_version]
+
     def get_context(self, user_id: int, shot: int) -> str:
         # Shuffled user ratings
         user_ratings = self.dataset.training_df[self.dataset.training_df["userId"] == user_id].sample(frac=1).sort_values("rating", ascending=False)
@@ -127,19 +141,23 @@ class PromptGenerator:
 
         assert len(likes_sample) or len(dislikes_sample)
 
-        rated_context_data = [likes_sample, dislikes_sample]
+        rated_context_data = [
+            (likes_sample, SampleKind.highest),
+            (dislikes_sample, SampleKind.lowest),
+        ]
 
         if not self.likes_first:
             rated_context_data = reversed(rated_context_data)
 
         context = ""
-        for sample in rated_context_data:
+        for sample, kind in rated_context_data:
             if not len(sample):
                 continue
 
             if context:
                 context += "\n\n"
 
+            context += self.get_sample_header(kind=kind, shot=shot)
             context += self.get_rated_movies_context(ratings_sample=sample, shot=shot)
 
         return context
@@ -216,8 +234,8 @@ FILENAME_PARAMETERS = {
     "TP": "training_popularity",
     "Z": "keep_trailing_zeroes",
     "DO": "double_range",
+    "H": "sample_header_version",
 }
-
 
 @click.command()
 @click.option("--dataset-seed", default=0, type=int)
@@ -239,8 +257,9 @@ FILENAME_PARAMETERS = {
 @click.option("--runs", default=1, type=int)
 @click.option("--keep-trailing-zeroes/--strip-trailing-zeros", default=True)
 @click.option("--double-range/--single-range", default=False)
+@click.option("--sample-header-version", default=1, type=int)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
