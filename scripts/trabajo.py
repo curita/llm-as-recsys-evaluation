@@ -82,7 +82,7 @@ class SampleKind(Enum):
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -95,6 +95,7 @@ class PromptGenerator:
         self.keep_trailing_zeroes = keep_trailing_zeroes
         self.double_range = double_range
         self.sample_header_version = sample_header_version
+        self.rating_listing_version = rating_listing_version
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -116,11 +117,20 @@ class PromptGenerator:
     def get_user_identifier(self, shot: int) -> str:
         return f'User "{chr(65 + shot)}"'
 
+    def get_user_rating_display(self, shot: int, rating: float, movie_id: int) -> str:
+        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=False)
+
+        user_rating_versioned = {
+            1: f'{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating)} stars the movie {movie_info}. ',
+            2: f'- {movie_info}: {self.convert_rating_to_str(rating)} stars.\n',
+        }
+
+        return user_rating_versioned[self.rating_listing_version]
+
     def get_rated_movies_context(self, ratings_sample: pd.DataFrame, shot: int) -> str:
         context = ""
         for rating in ratings_sample.itertuples():
-            movie_info = self.get_movie_info(movie_id=rating.movieId, with_genre=self.with_genre, with_global_rating=False)
-            context += f'{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating.rating)} stars the movie {movie_info}. '
+            context += self.get_user_rating_display(shot=shot, rating=rating.rating, movie_id=rating.movieId)
 
         return context.strip()
 
@@ -235,6 +245,7 @@ FILENAME_PARAMETERS = {
     "Z": "keep_trailing_zeroes",
     "DO": "double_range",
     "H": "sample_header_version",
+    "RL": "rating_listing_version",
 }
 
 @click.command()
@@ -258,8 +269,9 @@ FILENAME_PARAMETERS = {
 @click.option("--keep-trailing-zeroes/--strip-trailing-zeros", default=True)
 @click.option("--double-range/--single-range", default=False)
 @click.option("--sample-header-version", default=1, type=int)
+@click.option("--rating-listing-version", default=1, type=int)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
