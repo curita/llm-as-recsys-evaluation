@@ -82,7 +82,7 @@ class SampleKind(Enum):
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, numeric_user_identifier: bool, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -98,6 +98,7 @@ class PromptGenerator:
         self.rating_listing_version = rating_listing_version
         self.context_header_version = context_header_version
         self.answer_mark_version = answer_mark_version
+        self.numeric_user_identifier = numeric_user_identifier
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -117,7 +118,12 @@ class PromptGenerator:
             return f"{rating:g}"
 
     def get_user_identifier(self, shot: int) -> str:
-        return f'User "{chr(65 + shot)}"'
+        if self.numeric_user_identifier:
+            _id = shot
+        else:
+            _id = chr(65 + shot)
+
+        return f'User "{_id}"'
 
     def get_user_rating_display(self, shot: int, rating: float, movie_id: int) -> str:
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=False)
@@ -266,6 +272,7 @@ FILENAME_PARAMETERS = {
     "RL": "rating_listing_version",
     "H": "context_header_version",
     "AM": "answer_mark_version",
+    "N": "numeric_user_identifier",
 }
 
 @click.command()
@@ -292,8 +299,9 @@ FILENAME_PARAMETERS = {
 @click.option("--rating-listing-version", default=1, type=int)
 @click.option("--context-header-version", default=1, type=int)
 @click.option("--answer-mark-version", default=1, type=int)
+@click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
