@@ -82,7 +82,7 @@ class SampleKind(Enum):
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -96,6 +96,7 @@ class PromptGenerator:
         self.double_range = double_range
         self.sample_header_version = sample_header_version
         self.rating_listing_version = rating_listing_version
+        self.context_header_version = context_header_version
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -170,7 +171,14 @@ class PromptGenerator:
             context += self.get_sample_header(kind=kind, shot=shot)
             context += self.get_rated_movies_context(ratings_sample=sample, shot=shot)
 
-        return context
+        return self.get_context_header(shot=shot) + context
+
+    def get_context_header(self, shot: int) -> str:
+        header_versioned = {
+            1: "",
+            2: f"Here are some movie ratings from {self.get_user_identifier(shot=shot)}.\n\n",
+        }
+        return header_versioned[self.context_header_version]
 
     def get_task_description(self, movie_id: int, shot: int) -> str:
         versioned_descriptions = {
@@ -244,8 +252,9 @@ FILENAME_PARAMETERS = {
     "TP": "training_popularity",
     "Z": "keep_trailing_zeroes",
     "DO": "double_range",
-    "H": "sample_header_version",
+    "SH": "sample_header_version",
     "RL": "rating_listing_version",
+    "H": "context_header_version",
 }
 
 @click.command()
@@ -270,8 +279,9 @@ FILENAME_PARAMETERS = {
 @click.option("--double-range/--single-range", default=False)
 @click.option("--sample-header-version", default=1, type=int)
 @click.option("--rating-listing-version", default=1, type=int)
+@click.option("--context-header-version", default=1, type=int)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
