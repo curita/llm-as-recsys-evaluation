@@ -82,7 +82,7 @@ class SampleKind(Enum):
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -97,6 +97,7 @@ class PromptGenerator:
         self.sample_header_version = sample_header_version
         self.rating_listing_version = rating_listing_version
         self.context_header_version = context_header_version
+        self.answer_mark_version = answer_mark_version
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -191,12 +192,21 @@ class PromptGenerator:
 
     def generate_zeroshot_prompt(self, user_id: int, movie_id: int, shot: int) -> str:
         task_description = self.get_task_description(movie_id=movie_id, shot=shot)
+        task_description += self.get_answer_mark()
 
         if self.with_context:
-            return f"{context}\n\n{task_description}"
             context = self.get_context(user_id=user_id, shot=shot)
+            return f"{context}\n\n{task_description}"
 
         return task_description
+
+    def get_answer_mark(self) -> str:
+        mark_versioned = {
+            1: "\n\n",
+            2: "\n\nRating: ",
+            3: "\n\nEstimated rating:",
+        }
+        return mark_versioned[self.answer_mark_version]
 
     def __call__(self, user_id: int, movie_id: int) -> str:
         prompt = ""
@@ -205,7 +215,7 @@ class PromptGenerator:
         i = -1
         for i, example in enumerate(example_ratings.itertuples()):
             prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, shot=i)
-            prompt += f'\n{self.convert_rating_to_str(example.rating)}\n\n\n'
+            prompt += f'{self.convert_rating_to_str(example.rating)}\n\n\n'
 
         zero_shot = self.generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id, shot=i + 1)
         prompt += zero_shot
@@ -255,6 +265,7 @@ FILENAME_PARAMETERS = {
     "SH": "sample_header_version",
     "RL": "rating_listing_version",
     "H": "context_header_version",
+    "AM": "answer_mark_version",
 }
 
 @click.command()
@@ -280,8 +291,9 @@ FILENAME_PARAMETERS = {
 @click.option("--sample-header-version", default=1, type=int)
 @click.option("--rating-listing-version", default=1, type=int)
 @click.option("--context-header-version", default=1, type=int)
+@click.option("--answer-mark-version", default=1, type=int)
 @click.pass_context
-def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version):
+def main(ctx, dataset_seed, training_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
