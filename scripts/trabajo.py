@@ -191,6 +191,10 @@ class PromptGenerator:
         versioned_descriptions = {
             1: f"On a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}, how would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
             2: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}} on a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}?",
+            3: f"On a scale of {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}, how would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
+            # NOTE: Using chr(10) (equivalent to '\n') circumvents Python's restriction on employing backslashes within f-string expressions.
+            4: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?\nOPTIONS:\n- {(chr(10) + '- ').join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}",
+            5: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?"
         }
 
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating)
