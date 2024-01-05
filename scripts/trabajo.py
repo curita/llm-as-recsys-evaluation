@@ -28,7 +28,7 @@ POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 FREQUENCY_CATEGORIES = ["rare", "unfrequent", "normal", "very_frequent"]
 
 class MovieLensDataSet:
-    def __init__(self, testing_ratio: float, seed: int, training_popularity: tuple[str], popularity: tuple[str]) -> None:
+    def __init__(self, testing_ratio: float, training_popularity: tuple[str], popularity: tuple[str]) -> None:
         self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
         self.movies_df = pd.read_csv("ml-latest-small/movies.csv")
         self.normalize_movie_titles()
@@ -37,7 +37,7 @@ class MovieLensDataSet:
         if popularity:
             self.ratings_df = self.ratings_df[self.ratings_df.popularity.isin(popularity)]
 
-        self.training_df, self.testing_df = train_test_split(self.ratings_df, test_size=testing_ratio, random_state=seed)
+        self.training_df, self.testing_df = train_test_split(self.ratings_df, test_size=testing_ratio)
 
         if training_popularity:
             self.training_df = self.training_df[self.training_df.popularity.isin(training_popularity)]
@@ -280,7 +280,6 @@ FILENAME_PARAMETERS = {
 }
 
 @click.command()
-@click.option("--dataset-seed", default=0, type=int)
 @click.option("--testing-ratio", default=0.2, type=float)
 @click.option("--batch-size", default=8, type=int)
 @click.option("--initial-run-seed", default=0, type=int)
@@ -305,12 +304,9 @@ FILENAME_PARAMETERS = {
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
 @click.pass_context
-def main(ctx, dataset_seed, testing_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
+def main(ctx, testing_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
-
-    logger.info("Creating dataset...")
-    dataset = MovieLensDataSet(testing_ratio=testing_ratio, seed=dataset_seed, training_popularity=training_popularity, popularity=popularity)
 
     aggregated_rmse = []
     aggregated_precision = []
@@ -319,16 +315,20 @@ def main(ctx, dataset_seed, testing_ratio, batch_size, initial_run_seed, model, 
     aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
 
     for x in range(runs):
-
         run_params = ctx.params.copy()
         run_seed = initial_run_seed + x
         run_params["run_seed"] = run_seed
 
         logger.info(f"Run {run_seed=}.")
 
-        logger.info("Generating prompts...")
         np.random.seed(run_seed)
         torch.manual_seed(run_seed)
+
+        logger.info("Creating dataset...")
+        dataset = MovieLensDataSet(testing_ratio=testing_ratio, training_popularity=training_popularity, popularity=popularity)
+
+        logger.info("Generating prompts...")
+
         prompt_generator = PromptGenerator(dataset=dataset, **run_params)
         prompts = [
             prompt_generator(user_id=row.userId, movie_id=row.movieId)
