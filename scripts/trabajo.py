@@ -297,7 +297,7 @@ FILENAME_PARAMETERS = {
 @click.option("--popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.option("--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.option("--runs", default=1, type=int)
-@click.option("--keep-trailing-zeroes/--strip-trailing-zeros", default=True)
+@click.option("--keep-trailing-zeroes/--strip-trailing-zeroes", default=True)
 @click.option("--double-range/--single-range", default=False)
 @click.option("--sample-header-version", default=1, type=int)
 @click.option("--rating-listing-version", default=1, type=int)
