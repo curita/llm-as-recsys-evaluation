@@ -128,9 +128,12 @@ class PromptGenerator:
     def get_user_rating_display(self, shot: int, rating: float, movie_id: int) -> str:
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=False)
 
+        # NOTE: "\n" and " " separators between ratings in the listing are treated the same
         user_rating_versioned = {
-            1: f'{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating)} stars the movie {movie_info}. ',
+            1: f'{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating)} stars the movie {movie_info}.\n',
             2: f'- {movie_info}: {self.convert_rating_to_str(rating)} stars.\n',
+            3: f'* {movie_info} - {self.convert_rating_to_str(rating)} stars.\n',
+            4: f'* {movie_info} ({self.convert_rating_to_str(rating)} stars).\n',
         }
 
         return user_rating_versioned[self.rating_listing_version]
@@ -146,6 +149,7 @@ class PromptGenerator:
         versioned_headers = {
             1: "",
             2: f"Some of {self.get_user_identifier(shot=shot)}'s {kind.value} rated movies:\n",
+            3: f"Some {kind.value}-rated movies by {self.get_user_identifier(shot=shot)} include:\n"
         }
 
         return versioned_headers[self.sample_header_version]
@@ -184,6 +188,7 @@ class PromptGenerator:
         header_versioned = {
             1: "",
             2: f"Here are some movie ratings from {self.get_user_identifier(shot=shot)}.\n\n",
+            3: f"{self.get_user_identifier(shot=shot)} has provided ratings for various movies.\n\n",
         }
         return header_versioned[self.context_header_version]
 
@@ -194,7 +199,8 @@ class PromptGenerator:
             3: f"On a scale of {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}, how would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
             # NOTE: Using chr(10) (equivalent to '\n') circumvents Python's restriction on employing backslashes within f-string expressions.
             4: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?\nOPTIONS:\n- {(chr(10) + '- ').join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}",
-            5: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?"
+            5: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
+            6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}."
         }
 
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating)
@@ -215,6 +221,7 @@ class PromptGenerator:
             1: "\n\n",
             2: "\n\nRating: ",
             3: "\n\nEstimated rating:",
+            4: "\n\nPredicted rating:"
         }
         return mark_versioned[self.answer_mark_version]
 
