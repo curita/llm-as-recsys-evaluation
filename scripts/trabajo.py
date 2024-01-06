@@ -291,6 +291,7 @@ FILENAME_PARAMETERS = {
 @click.option("--batch-size", default=8, type=int)
 @click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
+@click.option("--hf-token", type=str)
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
 @click.option("--with-context/--without-context", default=True)
@@ -311,7 +312,7 @@ FILENAME_PARAMETERS = {
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
 @click.pass_context
-def main(ctx, testing_ratio, batch_size, initial_run_seed, model, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
+def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
@@ -343,7 +344,7 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, likes_count, d
         ]
         logger.info(f"Prompt Example:\n{prompts[0]}")
         logger.info("Initializing text-generation pipeline...")
-        text2textgenerator = pipeline("text2text-generation", model=model, device_map="auto")
+        text2textgenerator = pipeline("text2text-generation", model=model, device_map="auto", token=hf_token)
         logger.info("Running model...")
         model_parameters = {}
         if temperature == 0.0:
