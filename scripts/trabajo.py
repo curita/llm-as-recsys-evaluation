@@ -119,7 +119,7 @@ class PromptGenerator:
 
     def get_user_identifier(self, shot: int) -> str:
         if self.numeric_user_identifier:
-            _id = shot
+            _id = shot + 1
         else:
             _id = chr(65 + shot)
 
