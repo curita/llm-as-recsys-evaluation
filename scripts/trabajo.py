@@ -10,7 +10,7 @@ import click
 import pandas as pd
 import numpy as np
 from tqdm.auto import tqdm
-from transformers import pipeline
+from transformers import pipeline, Conversation
 import torch
 from torch.utils.data import Dataset
 from sklearn.metrics import mean_squared_error, classification_report, precision_recall_fscore_support
@@ -82,7 +82,7 @@ class SampleKind(Enum):
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, numeric_user_identifier: bool, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, numeric_user_identifier: bool, task: str, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating = with_global_rating
@@ -99,6 +99,7 @@ class PromptGenerator:
         self.context_header_version = context_header_version
         self.answer_mark_version = answer_mark_version
         self.numeric_user_identifier = numeric_user_identifier
+        self.task = task
 
     def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
@@ -225,18 +226,35 @@ class PromptGenerator:
         }
         return mark_versioned[self.answer_mark_version]
 
-    def __call__(self, user_id: int, movie_id: int) -> str:
-        prompt = ""
+    def __call__(self, user_id: int, movie_id: int) -> str | Conversation:
+        conversation = Conversation()
         movie_ratings = self.dataset.training_df[self.dataset.training_df["movieId"] == movie_id]
         example_ratings = movie_ratings.sample(n=min(self.shots, len(movie_ratings)), replace=False)
         i = -1
         for i, example in enumerate(example_ratings.itertuples()):
-            prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, shot=i)
-            prompt += f'{self.convert_rating_to_str(example.rating)}\n\n\n'
+            conversation.add_message({"role": "user", "content": self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, shot=i)})
+
+            if self.task == "conversational":
+                assistant_message = f'{{"rating": {self.convert_rating_to_str(example.rating)}}}'
+            else:
+                assistant_message = f'{self.convert_rating_to_str(example.rating)}\n\n\n'
+            conversation.add_message({"role": "assistant", "content": assistant_message})
 
         zero_shot = self.generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id, shot=i + 1)
-        prompt += zero_shot
+        conversation.add_message({"role": "user", "content": zero_shot})
+
+        if self.task == "conversational":
+            conversation.messages.insert(0, {"role": "system", "content": 'Only reply with a JSON dictionary with the rating. No explanations.'})
+            return conversation
+        else:
+            return self.format_messages(conversation)
+
+    def format_messages(self, conversation: Conversation) -> str:
+        prompt = ""
+        for m in conversation:
+            prompt += m["content"]
         return prompt
+
 
 class MockListDataset(Dataset):
     def __init__(self, original_list):
@@ -249,18 +267,27 @@ class MockListDataset(Dataset):
         return self.original_list[i]
 
 
-def parse_model_output(output: str, double_range: bool) -> bool:
+def parse_model_output(output: str, double_range: bool) -> float:
+    original_output = output
+
     try:
+        if output.strip().startswith("{"):
+            # NOTE: I'm not calling json.loads() because Llama2 returns invalid JSON dictionaries sometimes
+            output = output.rsplit(":", 1)[-1]
+
         for string, replacement in {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", ",": "."}.items():
             output = output.replace(string, replacement)
+
         value = float(re.findall(r"(\d+(?:.\d+)?)", output)[0])
+
+        if double_range:
+            value /= 2
+
+        return value
+
     except Exception:
-        raise ValueError(output)
+        raise ValueError(f"Can't parse: {original_output!r}")
 
-    if double_range:
-        value /= 2
-
-    return value
 
 FILENAME_PARAMETERS = {
     "RATIO": "testing_ratio",
@@ -292,6 +319,7 @@ FILENAME_PARAMETERS = {
 @click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
 @click.option("--hf-token", type=str)
+@click.option("--task", default="text2text-generation", type=click.Choice(["text2text-generation", "conversational"]))
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
 @click.option("--with-context/--without-context", default=True)
@@ -312,7 +340,7 @@ FILENAME_PARAMETERS = {
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
 @click.pass_context
-def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
+def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
@@ -343,8 +371,13 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, like
             for row in dataset.testing_df.itertuples()
         ]
         logger.info(f"Prompt Example:\n{prompts[0]}")
-        logger.info("Initializing text-generation pipeline...")
-        text2textgenerator = pipeline("text2text-generation", model=model, device_map="auto", token=hf_token)
+        logger.info(f"Initializing {task} pipeline...")
+
+        model_parameters = {}
+        if "llama" in model.lower():
+            model_parameters["torch_dtype"] = torch.float16
+
+        predictor = pipeline(task, model=model, device_map="auto", token=hf_token, **model_parameters)
         logger.info("Running model...")
         model_parameters = {}
         if temperature == 0.0:
@@ -352,7 +385,8 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, like
         else:
             model_parameters["do_sample"] = True
             model_parameters["temperature"] = temperature
-        outputs = [p[0]["generated_text"] for p in tqdm(text2textgenerator(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
+
+        outputs = [p[-1].get("generated_text") or p[-1].get("content") for p in tqdm(predictor(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
         logger.info("Parsing outputs...")
         predictions = [parse_model_output(o, double_range=double_range) for o in outputs]
         truth = [row.rating for row in dataset.testing_df.itertuples()]
