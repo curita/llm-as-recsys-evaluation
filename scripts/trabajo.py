@@ -70,10 +70,10 @@ class MovieLensDataSet:
         return self.movies_df[self.movies_df["movieId"] == movie_id]["genres"].iloc[0].split("|")
 
     def get_movie_global_rating(self, movie_id: int) -> float | None:
-        movie_ratings = self.training_df[self.training_df["movieId"] == movie_id]["ratings"]
+        movie_ratings = self.training_df[self.training_df["movieId"] == movie_id]["rating"]
         if not len(movie_ratings):
             return
-        return round_to_nearest_half(movie_ratings.median())
+        return round_to_nearest_half(movie_ratings.mean())
     
 
 class SampleKind(Enum):
