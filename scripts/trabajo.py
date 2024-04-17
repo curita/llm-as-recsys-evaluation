@@ -257,14 +257,16 @@ def parse_model_output(output: str, double_range: bool) -> float:
     original_output = output
 
     try:
-        if output.strip().startswith("{"):
-            # NOTE: I'm not calling json.loads() because Llama2 returns invalid JSON dictionaries sometimes
-            output = output.rsplit(":", 1)[-1]
+        output = re.sub(r"^[^\d\w]+", "", output) # Strip leading puntuation, spaces or emojis
+        value = float(re.findall(r"^(\d+(?:\.\d+)?)", output)[0])
 
-        for string, replacement in {"one": "1", "two": "2", "three": "3", "four": "4", "five": "5", ",": "."}.items():
-            output = output.replace(string, replacement)
+        min_value, max_value = POSSIBLE_VALUES[0], POSSIBLE_VALUES[-1]
+        if double_range:
+            min_value *= 2
+            max_value *= 2
 
-        value = float(re.findall(r"(\d+(?:.\d+)?)", output)[0])
+        assert value >= min_value
+        assert value <= max_value
 
         if double_range:
             value /= 2
@@ -272,7 +274,9 @@ def parse_model_output(output: str, double_range: bool) -> float:
         return value
 
     except Exception:
-        raise ValueError(f"Can't parse: {original_output!r}")
+        msg = f"Can't parse: {original_output!r}"
+        logger.exception(msg)
+        raise ValueError(msg)
 
 
 FILENAME_PARAMETERS = {
