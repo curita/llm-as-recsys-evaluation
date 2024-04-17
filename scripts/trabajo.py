@@ -352,6 +352,8 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     aggregated_retries = 0
     aggregated_unpredicted = 0
 
+    logger.info(f"Initializing {task} pipeline...")
+
     model_parameters = {}
     if precision == '16':
         model_parameters["torch_dtype"] = torch.float16
@@ -363,6 +365,30 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     if use_flash_attention_2:
         model_parameters["torch_dtype"] = torch.float16
         model_parameters.setdefault("model_kwargs", {})["attn_implementation"] = "flash_attention_2"
+
+    predictor = get_pipeline(task=task, model=model, model_parameters=model_parameters)
+    predictor.over_token_limit_count = 0
+    preprocess_method_name = "_parse_and_tokenize" if hasattr(predictor, "_parse_and_tokenize") else "preprocess"
+    original_preprocess = getattr(predictor, preprocess_method_name)
+    # This is the max sequence length. Does it mean the model doesn't output responses longer than this, or it doesn't work well in contexts longer than this?
+    max_token_length = getattr(predictor.model.config, "max_position_embeddings", None)
+    if not max_token_length and "t5" in model.lower():
+        # https://huggingface.co/google/flan-t5-xxl/discussions/41#65c3c3706b793334ef78dffc
+        max_token_length = 1024
+
+    logger.info(f"Model context limit: {max_token_length}")
+
+    def _patched_preprocess(*args, **kwargs):
+        inputs = original_preprocess(*args, **kwargs)
+        # NOTE: Only valid for PyTorch tensors
+        input_length = inputs["input_ids"].shape[-1]
+
+        if input_length > max_token_length:
+            predictor.over_token_limit_count += 1
+
+        return inputs
+
+    setattr(predictor, preprocess_method_name, _patched_preprocess)
 
     for x in range(runs):
         run_params = ctx.params.copy()
@@ -385,9 +411,7 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
             for row in dataset.testing_df.itertuples()
         ]
         logger.info(f"Prompt Example:\n{prompts[0]}")
-        logger.info(f"Initializing {task} pipeline...")
 
-        predictor = get_pipeline(task=task, model=model, model_parameters=model_parameters)
         logger.info("Running model...")
         model_parameters = {}
         if temperature == 0.0:
@@ -533,6 +557,8 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     logger.info(f"Aggregated Retries: {aggregated_retries}")
 
     logger.info(f"Aggregated Unknown Predictions: {aggregated_unpredicted} ({round(aggregated_unpredicted * 100 / aggregated_prompts, 2)}%)")
+
+    logger.info(f"Aggregated Over Limit Prompts: {predictor.over_token_limit_count} ({round(predictor.over_token_limit_count * 100 / aggregated_prompts, 2)}%)")
 
 
 if __name__ == "__main__":
