@@ -546,13 +546,13 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     logger.info(f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}")
 
     precision_s = pd.Series(aggregated_precision)
-    logger.info(f"Aggregated Precision-macro. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}")
+    logger.info(f"Aggregated Precision. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}")
 
     recall_s = pd.Series(aggregated_recall)
-    logger.info(f"Aggregated Recall-macro. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}")
+    logger.info(f"Aggregated Recall. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}")
 
     f1_s = pd.Series(aggregated_f1)
-    logger.info(f"Aggregated F1-macro. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
+    logger.info(f"Aggregated F1. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
 
     total = sum(aggregated_value_counts.values())
     aggregated_distribution = {rating: round((count * 100 / total), 2) for rating, count in sorted(aggregated_value_counts.items())}
