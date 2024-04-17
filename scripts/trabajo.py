@@ -309,7 +309,6 @@ FILENAME_PARAMETERS = {
 @click.option("--batch-size", default=8, type=int)
 @click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
-@click.option("--hf-token", type=str)
 @click.option("--task", default="text2text-generation", type=click.Choice(["text2text-generation"]))
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
@@ -332,7 +331,7 @@ FILENAME_PARAMETERS = {
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
 @click.pass_context
-def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
+def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
@@ -369,7 +368,7 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, task
         if "llama" in model.lower():
             model_parameters["torch_dtype"] = torch.float16
 
-        predictor = pipeline(task, model=model, device_map="auto", token=hf_token, **model_parameters)
+        predictor = pipeline(task, model=model, device_map="auto", token=True, **model_parameters)
         logger.info("Running model...")
         model_parameters = {}
         if temperature == 0.0:
