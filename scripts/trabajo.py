@@ -15,6 +15,7 @@ import torch
 from torch.utils.data import Dataset
 from sklearn.metrics import mean_squared_error, classification_report, precision_recall_fscore_support
 from sklearn.model_selection import train_test_split
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 
 logger = logging.getLogger(__name__)
@@ -304,6 +305,11 @@ FILENAME_PARAMETERS = {
     "N": "numeric_user_identifier",
 }
 
+
+@retry(stop=stop_after_attempt(5), wait=wait_exponential())
+def get_pipeline(task: str, model: str, model_parameters: dict):
+    return pipeline(task, model=model, device_map="auto", token=True, **model_parameters)
+
 @click.command()
 @click.option("--testing-ratio", default=0.2, type=float)
 @click.option("--batch-size", default=8, type=int)
@@ -381,7 +387,7 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         logger.info(f"Prompt Example:\n{prompts[0]}")
         logger.info(f"Initializing {task} pipeline...")
 
-        predictor = pipeline(task, model=model, device_map="auto", token=True, **model_parameters)
+        predictor = get_pipeline(task=task, model=model, model_parameters=model_parameters)
         logger.info("Running model...")
         model_parameters = {}
         if temperature == 0.0:
