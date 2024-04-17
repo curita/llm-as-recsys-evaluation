@@ -331,8 +331,9 @@ FILENAME_PARAMETERS = {
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
 @click.option("--precision", default='default', type=click.Choice(['default', '16', '8', '4']))
+@click.option("--use-flash-attention-2", is_flag=True, default=False)
 @click.pass_context
-def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier, precision):
+def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier, precision, use_flash_attention_2):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
@@ -349,6 +350,10 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         model_parameters["model_kwargs"] = {"load_in_8bit": True}
     elif precision == "4":
         model_parameters["model_kwargs"] = {"load_in_4bit": True}
+
+    if use_flash_attention_2:
+        model_parameters["torch_dtype"] = torch.float16
+        model_parameters.setdefault("model_kwargs", {})["attn_implementation"] = "flash_attention_2"
 
     for x in range(runs):
         run_params = ctx.params.copy()
