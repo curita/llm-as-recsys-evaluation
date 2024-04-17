@@ -82,10 +82,11 @@ class SampleKind(Enum):
 
 class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, numeric_user_identifier: bool, task: str, **kwargs) -> None:
+    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating_in_context: bool, with_global_rating_in_task: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, numeric_user_identifier: bool, task: str, **kwargs) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
-        self.with_global_rating = with_global_rating
+        self.with_global_rating_in_context = with_global_rating_in_context
+        self.with_global_rating_in_task = with_global_rating_in_task
         self.likes_first = likes_first
         self.likes_count = likes_count
         self.dislikes_count = dislikes_count
@@ -127,7 +128,7 @@ class PromptGenerator:
         return f'User "{_id}"'
 
     def get_user_rating_display(self, shot: int, rating: float, movie_id: int) -> str:
-        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=False)
+        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating_in_context)
 
         # NOTE: "\n" and " " separators between ratings in the listing are treated the same
         user_rating_versioned = {
@@ -204,7 +205,7 @@ class PromptGenerator:
             6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}."
         }
 
-        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating)
+        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating_in_task)
         return versioned_descriptions[self.task_desc_version].format(movie_info)
 
     def generate_zeroshot_prompt(self, user_id: int, movie_id: int, shot: int) -> str:
@@ -300,7 +301,8 @@ FILENAME_PARAMETERS = {
     "V": "task_desc_version",
     "S": "shots",
     "G": "with_genre",
-    "R": "with_global_rating",
+    "CR": "with_global_rating_in_context",
+    "TR": "with_global_rating_in_task",
     "T": "temperature",
     "P": "popularity",
     "TP": "training_popularity",
@@ -327,7 +329,8 @@ FILENAME_PARAMETERS = {
 @click.option("--task-desc-version", default=1, type=int)
 @click.option("--shots", default=0, type=int)
 @click.option("--with-genre/--without-genre", default=False)
-@click.option("--with-global-rating/--without-global-rating", default=False)
+@click.option("--with-global-rating-in-context/--without-global-rating-in-context", default=False)
+@click.option("--with-global-rating-in-task/--without-global-rating-in-task", default=False)
 @click.option("--temperature", default=0, type=float)
 @click.option("--popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
 @click.option("--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
@@ -340,7 +343,7 @@ FILENAME_PARAMETERS = {
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
 @click.pass_context
-def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
+def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
