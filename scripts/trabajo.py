@@ -192,6 +192,8 @@ class PromptGenerator:
             1: "",
             2: f"Here are some movie ratings from {self.get_user_identifier(shot=shot)}.\n\n",
             3: f"{self.get_user_identifier(shot=shot)} has provided ratings for various movies.\n\n",
+            4: f"This is a selection of {self.get_user_identifier(shot=shot)}'s history of movie ratings.\n\n",
+            5: f"Here are some of the highest and lowest ratings that {self.get_user_identifier(shot=shot)} has given to movies.\n\n"
         }
         return header_versioned[self.context_header_version]
 
@@ -203,7 +205,8 @@ class PromptGenerator:
             # NOTE: Using chr(10) (equivalent to '\n') circumvents Python's restriction on employing backslashes within f-string expressions.
             4: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?\nOPTIONS:\n- {(chr(10) + '- ').join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}",
             5: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
-            6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}."
+            6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
+            7: f"{self.get_user_identifier(shot=shot)} hasn't seen the movie {{}} yet. Predict how {self.get_user_identifier(shot=shot)} will likely rate the movie on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}."
         }
 
         movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating_in_task)
