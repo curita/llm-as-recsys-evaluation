@@ -342,6 +342,9 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     aggregated_recall = []
     aggregated_f1 = []
     aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
+    aggregated_retried_prompts = 0
+    aggregated_retries = 0
+    aggregated_unpredicted = 0
 
     model_parameters = {}
     if precision == '16':
@@ -389,7 +392,44 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
 
         outputs = [p[0]["generated_text"] for p in tqdm(predictor(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
         logger.info("Parsing outputs...")
-        predictions = [parse_model_output(o, double_range=double_range) for o in outputs]
+
+        def retry_inference(prompt, max_retries=3):
+            model_parameters["do_sample"] = True
+
+            for attempt in range(1, max_retries + 1):
+                logger.info(f"Retrying, {attempt=}")
+                output = predictor(prompt, **model_parameters)[0]["generated_text"]
+                try:
+                    pred = parse_model_output(output, double_range=double_range)
+                except ValueError:
+                    continue
+                else:
+                    return output, pred, attempt
+
+            raise ValueError("Couldn't get prediction")
+
+        retried_prompts = 0
+        retries = 0
+        max_retries = 3
+        predictions = []
+        unpredicted_indexes = set()
+        for index, out in enumerate(outputs):
+            try:
+                pred = parse_model_output(out, double_range=double_range)
+            except ValueError:
+                try:
+                    retried_prompts += 1
+                    retried_output, retried_prediction, retried_attempts = retry_inference(prompt=prompts[index], max_retries=max_retries)
+                    retries += retried_attempts
+                    outputs[index] = retried_output
+                    pred = retried_prediction
+                except ValueError:
+                    retries += max_retries
+                    unpredicted_indexes.add(index)
+                    pred = "N/A"
+
+            predictions.append(pred)
+
         truth = [row.rating for row in dataset.testing_df.itertuples()]
 
         logger.info("Dumping results...")
@@ -410,6 +450,12 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
                 writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "MovieID": row.movieId, "UserID": row.userId, "Output": out, "Prediction": str(pred), "Truth": str(row.rating), "Parameters": parameters})
                 parameters = ""
 
+        logger.info("Removing unpredicted items...")
+        truth = [value for i, value in enumerate(truth) if i not in unpredicted_indexes]
+        predictions = [value for i, value in enumerate(predictions) if i not in unpredicted_indexes]
+        logger.info(f"Unknown predictions: {len(unpredicted_indexes)}")
+        aggregated_unpredicted += len(unpredicted_indexes)
+
         logger.info("Reporting metrics...")
         rmse = mean_squared_error(truth, predictions, squared=False)
         logger.info(f"RMSE: {rmse}")
@@ -428,6 +474,12 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         distribution = {rating: round((count * 100 / len(predictions)), 2) for rating, count in sorted(value_counts.items())}
         logger.info(f"Distribution: {distribution}")
 
+        aggregated_retried_prompts += retried_prompts
+        logger.info(f"Retried prompts: {retried_prompts}")
+
+        aggregated_retries += retries
+        logger.info(f"Retries: {retries}")
+
     logger.info("Aggregated stats.")
     rmse_s = pd.Series(aggregated_rmse)
     logger.info(f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}")
@@ -445,7 +497,15 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     aggregated_distribution = {rating: round((count * 100 / total), 2) for rating, count in sorted(aggregated_value_counts.items())}
     logger.info(f"Aggregated Distribution: {aggregated_distribution}")
 
+    aggregated_prompts = len(prompts) * runs
+
+    logger.info(f"Aggregated Retried Prompts: {aggregated_retried_prompts} ({round(aggregated_retried_prompts * 100 / aggregated_prompts, 2)}%)")
+    logger.info(f"Aggregated Retries: {aggregated_retries}")
+
+    logger.info(f"Aggregated Unknown Predictions: {aggregated_unpredicted} ({round(aggregated_unpredicted * 100 / aggregated_prompts, 2)}%)")
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG, format="[%(asctime)s] " + logging.BASIC_FORMAT)
     main()
+ 
