@@ -151,7 +151,7 @@ class PromptGenerator:
     def get_sample_header(self, kind: SampleKind, shot: int) -> str:
         versioned_headers = {
             1: "",
-            2: f"Some of {self.get_user_identifier(shot=shot)}'s {kind.value} rated movies:\n",
+            2: f"Some of {self.get_user_identifier(shot=shot)}'s {kind.value}-rated movies:\n",
             3: f"Some {kind.value}-rated movies by {self.get_user_identifier(shot=shot)} include:\n"
         }
 
@@ -223,8 +223,8 @@ class PromptGenerator:
         mark_versioned = {
             1: "\n\n",
             2: "\n\nRating: ",
-            3: "\n\nEstimated rating:",
-            4: "\n\nPredicted rating:"
+            3: "\n\nEstimated rating: ",
+            4: "\n\nPredicted rating: ",
         }
         return mark_versioned[self.answer_mark_version]
 
