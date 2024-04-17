@@ -330,8 +330,9 @@ FILENAME_PARAMETERS = {
 @click.option("--context-header-version", default=1, type=int)
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
+@click.option("--precision", default='default', type=click.Choice(['default', '16', '8', '4']))
 @click.pass_context
-def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier):
+def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier, precision):
 
     logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
 
@@ -340,6 +341,14 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     aggregated_recall = []
     aggregated_f1 = []
     aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
+
+    model_parameters = {}
+    if precision == '16':
+        model_parameters["torch_dtype"] = torch.float16
+    elif precision == '8':
+        model_parameters["model_kwargs"] = {"load_in_8bit": True}
+    elif precision == "4":
+        model_parameters["model_kwargs"] = {"load_in_4bit": True}
 
     for x in range(runs):
         run_params = ctx.params.copy()
@@ -363,10 +372,6 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         ]
         logger.info(f"Prompt Example:\n{prompts[0]}")
         logger.info(f"Initializing {task} pipeline...")
-
-        model_parameters = {}
-        if "llama" in model.lower():
-            model_parameters["torch_dtype"] = torch.float16
 
         predictor = pipeline(task, model=model, device_map="auto", token=True, **model_parameters)
         logger.info("Running model...")
