@@ -306,6 +306,10 @@ FILENAME_PARAMETERS = {
     "H": "context_header_version",
     "AM": "answer_mark_version",
     "N": "numeric_user_identifier",
+    "TK": "task",
+    "B": "batch_size",
+    "PR": "precision",
+    "FL": "use_flash_attention_2",
 }
 
 
