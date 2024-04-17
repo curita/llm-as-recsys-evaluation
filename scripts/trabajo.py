@@ -309,7 +309,7 @@ FILENAME_PARAMETERS = {
 @click.option("--batch-size", default=8, type=int)
 @click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
-@click.option("--task", default="text2text-generation", type=click.Choice(["text2text-generation"]))
+@click.option("--task", default="text2text-generation", type=click.Choice(["text2text-generation", "text-generation"]))
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
 @click.option("--with-context/--without-context", default=True)
@@ -389,6 +389,24 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         else:
             model_parameters["do_sample"] = True
             model_parameters["temperature"] = temperature
+
+        if task == "text-generation":
+            model_parameters["return_full_text"] = False
+            model_parameters["max_new_tokens"] = 20
+            # NOTE: Needed for batching, as it's not set automatically in the pipeline like with other tasks
+
+            if predictor.tokenizer.pad_token_id and not predictor.model.config.pad_token_id:
+                predictor.model.config.pad_token_id = predictor.tokenizer.pad_token_id
+            elif not predictor.tokenizer.pad_token_id and predictor.model.config.pad_token_id:
+                predictor.tokenizer.pad_token_id = predictor.model.config.pad_token_id
+            else:
+                if "llama" in model.lower():
+                    # Reference: https://discuss.huggingface.co/t/llama2-pad-token-for-batched-inference/48020/2
+                    predictor.tokenizer.pad_token = "[PAD]"
+                    predictor.tokenizer.padding_side = "left"
+                else:
+                    predictor.tokenizer.pad_token_id = predictor.model.config.eos_token_id
+                    predictor.model.config.pad_token_id = predictor.model.config.eos_token_id
 
         outputs = [p[0]["generated_text"] for p in tqdm(predictor(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
         logger.info("Parsing outputs...")
