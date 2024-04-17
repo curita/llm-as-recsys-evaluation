@@ -13,7 +13,11 @@ from tqdm.auto import tqdm
 from transformers import pipeline
 import torch
 from torch.utils.data import Dataset
-from sklearn.metrics import mean_squared_error, classification_report, precision_recall_fscore_support
+from sklearn.metrics import (
+    mean_squared_error,
+    classification_report,
+    precision_recall_fscore_support,
+)
 from sklearn.model_selection import train_test_split
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -28,20 +32,32 @@ def round_to_nearest_half(number):
 POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
 FREQUENCY_CATEGORIES = ["rare", "unfrequent", "normal", "very_frequent"]
 
+
 class MovieLensDataSet:
-    def __init__(self, testing_ratio: float, training_popularity: tuple[str], popularity: tuple[str]) -> None:
+    def __init__(
+        self,
+        testing_ratio: float,
+        training_popularity: tuple[str],
+        popularity: tuple[str],
+    ) -> None:
         self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
         self.movies_df = pd.read_csv("ml-latest-small/movies.csv")
         self.normalize_movie_titles()
         self.categorize_movie_popularity()
 
         if popularity:
-            self.ratings_df = self.ratings_df[self.ratings_df.popularity.isin(popularity)]
+            self.ratings_df = self.ratings_df[
+                self.ratings_df.popularity.isin(popularity)
+            ]
 
-        self.training_df, self.testing_df = train_test_split(self.ratings_df, test_size=testing_ratio)
+        self.training_df, self.testing_df = train_test_split(
+            self.ratings_df, test_size=testing_ratio
+        )
 
         if training_popularity:
-            self.training_df = self.training_df[self.training_df.popularity.isin(training_popularity)]
+            self.training_df = self.training_df[
+                self.training_df.popularity.isin(training_popularity)
+            ]
 
     def normalize_movie_titles(self):
         self.movies_df["normalize_title"] = self.movies_df["title"].str.replace(
@@ -55,12 +71,18 @@ class MovieLensDataSet:
         ].str.replace(r"^(.+), A (\(\d{4}\))$", r"A \1 \2", regex=True)
 
     def categorize_movie_popularity(self):
-        rating_counts = self.ratings_df.groupby('movieId').count().userId.to_frame().rename(columns={'userId': 'ratingCount'})
+        rating_counts = (
+            self.ratings_df.groupby("movieId")
+            .count()
+            .userId.to_frame()
+            .rename(columns={"userId": "ratingCount"})
+        )
         rating_counts["popularity"] = pd.cut(
-            rating_counts.ratingCount, [0, 2, 10, 50, 300],
+            rating_counts.ratingCount,
+            [0, 2, 10, 50, 300],
             labels=FREQUENCY_CATEGORIES,
         )
-        self.ratings_df = self.ratings_df.merge(rating_counts, on='movieId', how="left")
+        self.ratings_df = self.ratings_df.merge(rating_counts, on="movieId", how="left")
 
     def get_movie_name(self, movie_id: int) -> str:
         return self.movies_df[self.movies_df["movieId"] == movie_id][
@@ -68,22 +90,49 @@ class MovieLensDataSet:
         ].iloc[0]
 
     def get_movie_genres(self, movie_id: int) -> list[str]:
-        return self.movies_df[self.movies_df["movieId"] == movie_id]["genres"].iloc[0].split("|")
+        return (
+            self.movies_df[self.movies_df["movieId"] == movie_id]["genres"]
+            .iloc[0]
+            .split("|")
+        )
 
     def get_movie_global_rating(self, movie_id: int) -> float | None:
-        movie_ratings = self.training_df[self.training_df["movieId"] == movie_id]["rating"]
+        movie_ratings = self.training_df[self.training_df["movieId"] == movie_id][
+            "rating"
+        ]
         if not len(movie_ratings):
             return
         return round_to_nearest_half(movie_ratings.mean())
-    
+
 
 class SampleKind(Enum):
     lowest = "lowest"
     highest = "highest"
 
-class PromptGenerator:
 
-    def __init__(self, dataset: MovieLensDataSet, with_genre: bool, with_global_rating_in_context: bool, with_global_rating_in_task: bool, likes_first: bool, likes_count: int, dislikes_count: int, task_desc_version: int, with_context: bool, shots: int, keep_trailing_zeroes: bool, double_range: bool, sample_header_version: int, rating_listing_version: int, context_header_version: int, answer_mark_version: int, numeric_user_identifier: bool, task: str, **kwargs) -> None:
+class PromptGenerator:
+    def __init__(
+        self,
+        dataset: MovieLensDataSet,
+        with_genre: bool,
+        with_global_rating_in_context: bool,
+        with_global_rating_in_task: bool,
+        likes_first: bool,
+        likes_count: int,
+        dislikes_count: int,
+        task_desc_version: int,
+        with_context: bool,
+        shots: int,
+        keep_trailing_zeroes: bool,
+        double_range: bool,
+        sample_header_version: int,
+        rating_listing_version: int,
+        context_header_version: int,
+        answer_mark_version: int,
+        numeric_user_identifier: bool,
+        task: str,
+        **kwargs,
+    ) -> None:
         self.dataset = dataset
         self.with_genre = with_genre
         self.with_global_rating_in_context = with_global_rating_in_context
@@ -103,12 +152,16 @@ class PromptGenerator:
         self.numeric_user_identifier = numeric_user_identifier
         self.task = task
 
-    def get_movie_info(self, movie_id: int, with_genre: bool, with_global_rating: bool) -> str:
+    def get_movie_info(
+        self, movie_id: int, with_genre: bool, with_global_rating: bool
+    ) -> str:
         info = f'"{self.dataset.get_movie_name(movie_id)}"'
         if with_genre:
             info += f' ({"|".join(self.dataset.get_movie_genres(movie_id))})'
-        if with_global_rating and (global_rating := self.dataset.get_movie_global_rating(movie_id)):
-            info += f' (Average rating: {global_rating} stars out of 5)'
+        if with_global_rating and (
+            global_rating := self.dataset.get_movie_global_rating(movie_id)
+        ):
+            info += f" (Average rating: {global_rating} stars out of 5)"
         return info
 
     def convert_rating_to_str(self, rating: float) -> str:
@@ -129,14 +182,18 @@ class PromptGenerator:
         return f'User "{_id}"'
 
     def get_user_rating_display(self, shot: int, rating: float, movie_id: int) -> str:
-        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating_in_context)
+        movie_info = self.get_movie_info(
+            movie_id=movie_id,
+            with_genre=self.with_genre,
+            with_global_rating=self.with_global_rating_in_context,
+        )
 
         # NOTE: "\n" and " " separators between ratings in the listing are treated the same
         user_rating_versioned = {
-            1: f'{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating)} stars the movie {movie_info}.\n',
-            2: f'- {movie_info}: {self.convert_rating_to_str(rating)} stars.\n',
-            3: f'* {movie_info} - {self.convert_rating_to_str(rating)} stars.\n',
-            4: f'* {movie_info} ({self.convert_rating_to_str(rating)} stars).\n',
+            1: f"{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating)} stars the movie {movie_info}.\n",
+            2: f"- {movie_info}: {self.convert_rating_to_str(rating)} stars.\n",
+            3: f"* {movie_info} - {self.convert_rating_to_str(rating)} stars.\n",
+            4: f"* {movie_info} ({self.convert_rating_to_str(rating)} stars).\n",
         }
 
         return user_rating_versioned[self.rating_listing_version]
@@ -144,7 +201,9 @@ class PromptGenerator:
     def get_rated_movies_context(self, ratings_sample: pd.DataFrame, shot: int) -> str:
         context = ""
         for rating in ratings_sample.itertuples():
-            context += self.get_user_rating_display(shot=shot, rating=rating.rating, movie_id=rating.movieId)
+            context += self.get_user_rating_display(
+                shot=shot, rating=rating.rating, movie_id=rating.movieId
+            )
 
         return context.strip()
 
@@ -152,17 +211,23 @@ class PromptGenerator:
         versioned_headers = {
             1: "",
             2: f"Some of {self.get_user_identifier(shot=shot)}'s {kind.value}-rated movies:\n",
-            3: f"Some {kind.value}-rated movies by {self.get_user_identifier(shot=shot)} include:\n"
+            3: f"Some {kind.value}-rated movies by {self.get_user_identifier(shot=shot)} include:\n",
         }
 
         return versioned_headers[self.sample_header_version]
 
     def get_context(self, user_id: int, shot: int) -> str:
         # Shuffled user ratings
-        user_ratings = self.dataset.training_df[self.dataset.training_df["userId"] == user_id].sample(frac=1).sort_values("rating", ascending=False)
+        user_ratings = (
+            self.dataset.training_df[self.dataset.training_df["userId"] == user_id]
+            .sample(frac=1)
+            .sort_values("rating", ascending=False)
+        )
 
-        likes_sample = user_ratings[user_ratings.rating >= 4][:self.likes_count]
-        dislikes_sample = user_ratings[user_ratings.rating <= 2][::-1][:self.dislikes_count]
+        likes_sample = user_ratings[user_ratings.rating >= 4][: self.likes_count]
+        dislikes_sample = user_ratings[user_ratings.rating <= 2][::-1][
+            : self.dislikes_count
+        ]
 
         assert len(likes_sample) or len(dislikes_sample)
 
@@ -193,7 +258,7 @@ class PromptGenerator:
             2: f"Here are some movie ratings from {self.get_user_identifier(shot=shot)}.\n\n",
             3: f"{self.get_user_identifier(shot=shot)} has provided ratings for various movies.\n\n",
             4: f"This is a selection of {self.get_user_identifier(shot=shot)}'s history of movie ratings.\n\n",
-            5: f"Here are some of the highest and lowest ratings that {self.get_user_identifier(shot=shot)} has given to movies.\n\n"
+            5: f"Here are some of the highest and lowest ratings that {self.get_user_identifier(shot=shot)} has given to movies.\n\n",
         }
         return header_versioned[self.context_header_version]
 
@@ -206,10 +271,14 @@ class PromptGenerator:
             4: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?\nOPTIONS:\n- {(chr(10) + '- ').join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}",
             5: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
             6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
-            7: f"{self.get_user_identifier(shot=shot)} hasn't seen the movie {{}} yet. Predict how {self.get_user_identifier(shot=shot)} will likely rate the movie on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}."
+            7: f"{self.get_user_identifier(shot=shot)} hasn't seen the movie {{}} yet. Predict how {self.get_user_identifier(shot=shot)} will likely rate the movie on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
         }
 
-        movie_info = self.get_movie_info(movie_id=movie_id, with_genre=self.with_genre, with_global_rating=self.with_global_rating_in_task)
+        movie_info = self.get_movie_info(
+            movie_id=movie_id,
+            with_genre=self.with_genre,
+            with_global_rating=self.with_global_rating_in_task,
+        )
         return versioned_descriptions[self.task_desc_version].format(movie_info)
 
     def generate_zeroshot_prompt(self, user_id: int, movie_id: int, shot: int) -> str:
@@ -233,14 +302,22 @@ class PromptGenerator:
 
     def __call__(self, user_id: int, movie_id: int) -> str:
         prompt = ""
-        movie_ratings = self.dataset.training_df[self.dataset.training_df["movieId"] == movie_id]
-        example_ratings = movie_ratings.sample(n=min(self.shots, len(movie_ratings)), replace=False)
+        movie_ratings = self.dataset.training_df[
+            self.dataset.training_df["movieId"] == movie_id
+        ]
+        example_ratings = movie_ratings.sample(
+            n=min(self.shots, len(movie_ratings)), replace=False
+        )
         i = -1
         for i, example in enumerate(example_ratings.itertuples()):
-            prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, shot=i)
-            prompt += f'{self.convert_rating_to_str(example.rating)}\n\n\n'
+            prompt += self.generate_zeroshot_prompt(
+                user_id=example.userId, movie_id=example.movieId, shot=i
+            )
+            prompt += f"{self.convert_rating_to_str(example.rating)}\n\n\n"
 
-        zero_shot = self.generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id, shot=i + 1)
+        zero_shot = self.generate_zeroshot_prompt(
+            user_id=user_id, movie_id=movie_id, shot=i + 1
+        )
         prompt += zero_shot
 
         return prompt
@@ -261,7 +338,9 @@ def parse_model_output(output: str, double_range: bool) -> float:
     original_output = output
 
     try:
-        output = re.sub(r"^[^\d\w]+", "", output) # Strip leading puntuation, spaces or emojis
+        output = re.sub(
+            r"^[^\d\w]+", "", output
+        )  # Strip leading puntuation, spaces or emojis
         value = float(re.findall(r"^(\d+(?:\.\d+)?)", output)[0])
 
         min_value, max_value = POSSIBLE_VALUES[0], POSSIBLE_VALUES[-1]
@@ -315,14 +394,21 @@ FILENAME_PARAMETERS = {
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential())
 def get_pipeline(task: str, model: str, model_parameters: dict):
-    return pipeline(task, model=model, device_map="auto", token=True, **model_parameters)
+    return pipeline(
+        task, model=model, device_map="auto", token=True, **model_parameters
+    )
+
 
 @click.command()
 @click.option("--testing-ratio", default=0.2, type=float)
 @click.option("--batch-size", default=8, type=int)
 @click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
-@click.option("--task", default="text2text-generation", type=click.Choice(["text2text-generation", "text-generation"]))
+@click.option(
+    "--task",
+    default="text2text-generation",
+    type=click.Choice(["text2text-generation", "text-generation"]),
+)
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
 @click.option("--with-context/--without-context", default=True)
@@ -330,11 +416,17 @@ def get_pipeline(task: str, model: str, model_parameters: dict):
 @click.option("--task-desc-version", default=1, type=int)
 @click.option("--shots", default=0, type=int)
 @click.option("--with-genre/--without-genre", default=False)
-@click.option("--with-global-rating-in-context/--without-global-rating-in-context", default=False)
-@click.option("--with-global-rating-in-task/--without-global-rating-in-task", default=False)
+@click.option(
+    "--with-global-rating-in-context/--without-global-rating-in-context", default=False
+)
+@click.option(
+    "--with-global-rating-in-task/--without-global-rating-in-task", default=False
+)
 @click.option("--temperature", default=0, type=float)
 @click.option("--popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
-@click.option("--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES))
+@click.option(
+    "--training-popularity", multiple=True, type=click.Choice(FREQUENCY_CATEGORIES)
+)
 @click.option("--runs", default=1, type=int)
 @click.option("--keep-trailing-zeroes/--strip-trailing-zeroes", default=True)
 @click.option("--double-range/--single-range", default=False)
@@ -343,12 +435,44 @@ def get_pipeline(task: str, model: str, model_parameters: dict):
 @click.option("--context-header-version", default=1, type=int)
 @click.option("--answer-mark-version", default=1, type=int)
 @click.option("--numeric-user-identifier/--alphabetic-user-identifier", default=False)
-@click.option("--precision", default='default', type=click.Choice(['default', '16', '8', '4']))
+@click.option(
+    "--precision", default="default", type=click.Choice(["default", "16", "8", "4"])
+)
 @click.option("--use-flash-attention-2", is_flag=True, default=False)
 @click.pass_context
-def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_count, dislikes_count, with_context, likes_first, task_desc_version, shots, with_genre, with_global_rating_in_context, with_global_rating_in_task, temperature, popularity, training_popularity, runs, keep_trailing_zeroes, double_range, sample_header_version, rating_listing_version, context_header_version, answer_mark_version, numeric_user_identifier, precision, use_flash_attention_2):
-
-    logger.info(f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}.")
+def main(
+    ctx,
+    testing_ratio,
+    batch_size,
+    initial_run_seed,
+    model,
+    task,
+    likes_count,
+    dislikes_count,
+    with_context,
+    likes_first,
+    task_desc_version,
+    shots,
+    with_genre,
+    with_global_rating_in_context,
+    with_global_rating_in_task,
+    temperature,
+    popularity,
+    training_popularity,
+    runs,
+    keep_trailing_zeroes,
+    double_range,
+    sample_header_version,
+    rating_listing_version,
+    context_header_version,
+    answer_mark_version,
+    numeric_user_identifier,
+    precision,
+    use_flash_attention_2,
+):
+    logger.info(
+        f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}."
+    )
 
     aggregated_rmse = []
     aggregated_precision = []
@@ -362,20 +486,26 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
     logger.info(f"Initializing {task} pipeline...")
 
     model_parameters = {}
-    if precision == '16':
+    if precision == "16":
         model_parameters["torch_dtype"] = torch.float16
-    elif precision == '8':
+    elif precision == "8":
         model_parameters["model_kwargs"] = {"load_in_8bit": True}
     elif precision == "4":
         model_parameters["model_kwargs"] = {"load_in_4bit": True}
 
     if use_flash_attention_2:
         model_parameters["torch_dtype"] = torch.float16
-        model_parameters.setdefault("model_kwargs", {})["attn_implementation"] = "flash_attention_2"
+        model_parameters.setdefault("model_kwargs", {})[
+            "attn_implementation"
+        ] = "flash_attention_2"
 
     predictor = get_pipeline(task=task, model=model, model_parameters=model_parameters)
     predictor.over_token_limit_count = 0
-    preprocess_method_name = "_parse_and_tokenize" if hasattr(predictor, "_parse_and_tokenize") else "preprocess"
+    preprocess_method_name = (
+        "_parse_and_tokenize"
+        if hasattr(predictor, "_parse_and_tokenize")
+        else "preprocess"
+    )
     original_preprocess = getattr(predictor, preprocess_method_name)
     # This is the max sequence length. Does it mean the model doesn't output responses longer than this, or it doesn't work well in contexts longer than this?
     max_token_length = getattr(predictor.model.config, "max_position_embeddings", None)
@@ -408,7 +538,11 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         torch.manual_seed(run_seed)
 
         logger.info("Creating dataset...")
-        dataset = MovieLensDataSet(testing_ratio=testing_ratio, training_popularity=training_popularity, popularity=popularity)
+        dataset = MovieLensDataSet(
+            testing_ratio=testing_ratio,
+            training_popularity=training_popularity,
+            popularity=popularity,
+        )
 
         logger.info("Generating prompts...")
 
@@ -432,9 +566,15 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
             model_parameters["max_new_tokens"] = 20
             # NOTE: Needed for batching, as it's not set automatically in the pipeline like with other tasks
 
-            if predictor.tokenizer.pad_token_id and not predictor.model.config.pad_token_id:
+            if (
+                predictor.tokenizer.pad_token_id
+                and not predictor.model.config.pad_token_id
+            ):
                 predictor.model.config.pad_token_id = predictor.tokenizer.pad_token_id
-            elif not predictor.tokenizer.pad_token_id and predictor.model.config.pad_token_id:
+            elif (
+                not predictor.tokenizer.pad_token_id
+                and predictor.model.config.pad_token_id
+            ):
                 predictor.tokenizer.pad_token_id = predictor.model.config.pad_token_id
             else:
                 if "llama" in model.lower():
@@ -442,10 +582,22 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
                     predictor.tokenizer.pad_token = "[PAD]"
                     predictor.tokenizer.padding_side = "left"
                 else:
-                    predictor.tokenizer.pad_token_id = predictor.model.config.eos_token_id
-                    predictor.model.config.pad_token_id = predictor.model.config.eos_token_id
+                    predictor.tokenizer.pad_token_id = (
+                        predictor.model.config.eos_token_id
+                    )
+                    predictor.model.config.pad_token_id = (
+                        predictor.model.config.eos_token_id
+                    )
 
-        outputs = [p[0]["generated_text"] for p in tqdm(predictor(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
+        outputs = [
+            p[0]["generated_text"]
+            for p in tqdm(
+                predictor(
+                    MockListDataset(prompts), batch_size=batch_size, **model_parameters
+                ),
+                total=len(prompts),
+            )
+        ]
         logger.info("Parsing outputs...")
 
         def retry_inference(prompt, max_retries=3):
@@ -474,7 +626,11 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
             except ValueError:
                 try:
                     retried_prompts += 1
-                    retried_output, retried_prediction, retried_attempts = retry_inference(prompt=prompts[index], max_retries=max_retries)
+                    (
+                        retried_output,
+                        retried_prediction,
+                        retried_attempts,
+                    ) = retry_inference(prompt=prompts[index], max_retries=max_retries)
                     retries += retried_attempts
                     outputs[index] = retried_output
                     pred = retried_prediction
@@ -489,25 +645,54 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
 
         logger.info("Dumping results...")
 
-        folder_name = f"experiment_{'_'.join(k + '=' + str(run_params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace("/", ":")
-        output_folder = Path(f"results") / folder_name
+        folder_name = f"experiment_{'_'.join(k + '=' + str(run_params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace(
+            "/", ":"
+        )
+        output_folder = Path("results") / folder_name
         output_folder.mkdir(parents=True, exist_ok=True)
         output_file = output_folder / "results.csv"
 
         logger.info(f"Path: {output_file}")
 
         with open(output_file, "w", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=["Prompt", "Movie", "MovieID", "UserID", "Output", "Prediction", "Truth", "Parameters"])
+            writer = csv.DictWriter(
+                csvfile,
+                fieldnames=[
+                    "Prompt",
+                    "Movie",
+                    "MovieID",
+                    "UserID",
+                    "Output",
+                    "Prediction",
+                    "Truth",
+                    "Parameters",
+                ],
+            )
 
             writer.writeheader()
             parameters = json.dumps(run_params)
-            for prmpt, out, pred, row in zip(prompts, outputs, predictions, dataset.testing_df.itertuples()):
-                writer.writerow({'Prompt': prmpt, "Movie": dataset.get_movie_name(row.movieId), "MovieID": row.movieId, "UserID": row.userId, "Output": out, "Prediction": str(pred), "Truth": str(row.rating), "Parameters": parameters})
+            for prmpt, out, pred, row in zip(
+                prompts, outputs, predictions, dataset.testing_df.itertuples()
+            ):
+                writer.writerow(
+                    {
+                        "Prompt": prmpt,
+                        "Movie": dataset.get_movie_name(row.movieId),
+                        "MovieID": row.movieId,
+                        "UserID": row.userId,
+                        "Output": out,
+                        "Prediction": str(pred),
+                        "Truth": str(row.rating),
+                        "Parameters": parameters,
+                    }
+                )
                 parameters = ""
 
         logger.info("Removing unpredicted items...")
         truth = [value for i, value in enumerate(truth) if i not in unpredicted_indexes]
-        predictions = [value for i, value in enumerate(predictions) if i not in unpredicted_indexes]
+        predictions = [
+            value for i, value in enumerate(predictions) if i not in unpredicted_indexes
+        ]
         logger.info(f"Unknown predictions: {len(unpredicted_indexes)}")
         aggregated_unpredicted += len(unpredicted_indexes)
 
@@ -516,14 +701,27 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         logger.info(f"RMSE: {rmse}")
         aggregated_rmse.append(rmse)
 
-        predictions_df = pd.DataFrame({
-            "Truth": truth,
-            "Prediction": predictions,
-            "UserID": [u for i, u in enumerate(dataset.testing_df["userId"]) if i not in unpredicted_indexes],
-        })
+        predictions_df = pd.DataFrame(
+            {
+                "Truth": truth,
+                "Prediction": predictions,
+                "UserID": [
+                    u
+                    for i, u in enumerate(dataset.testing_df["userId"])
+                    if i not in unpredicted_indexes
+                ],
+            }
+        )
 
-        logger.info(f"Classification report:\n{classification_report(predictions_df['Truth'] >= 4.0, predictions_df['Prediction'] >= 4.0)}")
-        precision, recall, f1, _ = precision_recall_fscore_support(predictions_df["Truth"] >= 4.0, predictions_df["Prediction"] >= 4.0, average="macro", zero_division=0.0)
+        logger.info(
+            f"Classification report:\n{classification_report(predictions_df['Truth'] >= 4.0, predictions_df['Prediction'] >= 4.0)}"
+        )
+        precision, recall, f1, _ = precision_recall_fscore_support(
+            predictions_df["Truth"] >= 4.0,
+            predictions_df["Prediction"] >= 4.0,
+            average="macro",
+            zero_division=0.0,
+        )
         aggregated_precision.append(precision)
         aggregated_recall.append(recall)
         aggregated_f1.append(f1)
@@ -532,7 +730,10 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         for p in predictions:
             value_counts[p] += 1
             aggregated_value_counts[p] += 1
-        distribution = {rating: round((count * 100 / len(predictions)), 2) for rating, count in sorted(value_counts.items())}
+        distribution = {
+            rating: round((count * 100 / len(predictions)), 2)
+            for rating, count in sorted(value_counts.items())
+        }
         logger.info(f"Distribution: {distribution}")
 
         aggregated_retried_prompts += retried_prompts
@@ -543,32 +744,48 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
 
     logger.info("Aggregated stats.")
     rmse_s = pd.Series(aggregated_rmse)
-    logger.info(f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}")
+    logger.info(
+        f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}"
+    )
 
     precision_s = pd.Series(aggregated_precision)
-    logger.info(f"Aggregated Precision. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}")
+    logger.info(
+        f"Aggregated Precision. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}"
+    )
 
     recall_s = pd.Series(aggregated_recall)
-    logger.info(f"Aggregated Recall. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}")
+    logger.info(
+        f"Aggregated Recall. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}"
+    )
 
     f1_s = pd.Series(aggregated_f1)
     logger.info(f"Aggregated F1. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
 
     total = sum(aggregated_value_counts.values())
-    aggregated_distribution = {rating: round((count * 100 / total), 2) for rating, count in sorted(aggregated_value_counts.items())}
+    aggregated_distribution = {
+        rating: round((count * 100 / total), 2)
+        for rating, count in sorted(aggregated_value_counts.items())
+    }
     logger.info(f"Aggregated Distribution: {aggregated_distribution}")
 
     aggregated_prompts = len(prompts) * runs
 
-    logger.info(f"Aggregated Retried Prompts: {aggregated_retried_prompts} ({round(aggregated_retried_prompts * 100 / aggregated_prompts, 2)}%)")
+    logger.info(
+        f"Aggregated Retried Prompts: {aggregated_retried_prompts} ({round(aggregated_retried_prompts * 100 / aggregated_prompts, 2)}%)"
+    )
     logger.info(f"Aggregated Retries: {aggregated_retries}")
 
-    logger.info(f"Aggregated Unknown Predictions: {aggregated_unpredicted} ({round(aggregated_unpredicted * 100 / aggregated_prompts, 2)}%)")
+    logger.info(
+        f"Aggregated Unknown Predictions: {aggregated_unpredicted} ({round(aggregated_unpredicted * 100 / aggregated_prompts, 2)}%)"
+    )
 
-    logger.info(f"Aggregated Over Limit Prompts: {predictor.over_token_limit_count} ({round(predictor.over_token_limit_count * 100 / aggregated_prompts, 2)}%)")
+    logger.info(
+        f"Aggregated Over Limit Prompts: {predictor.over_token_limit_count} ({round(predictor.over_token_limit_count * 100 / aggregated_prompts, 2)}%)"
+    )
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format="[%(asctime)s] " + logging.BASIC_FORMAT)
+    logging.basicConfig(
+        level=logging.DEBUG, format="[%(asctime)s] " + logging.BASIC_FORMAT
+    )
     main()
- 
