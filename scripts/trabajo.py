@@ -10,7 +10,7 @@ import click
 import pandas as pd
 import numpy as np
 from tqdm.auto import tqdm
-from transformers import pipeline, Conversation
+from transformers import pipeline
 import torch
 from torch.utils.data import Dataset
 from sklearn.metrics import mean_squared_error, classification_report, precision_recall_fscore_support
@@ -227,33 +227,18 @@ class PromptGenerator:
         }
         return mark_versioned[self.answer_mark_version]
 
-    def __call__(self, user_id: int, movie_id: int) -> str | Conversation:
-        conversation = Conversation()
+    def __call__(self, user_id: int, movie_id: int) -> str:
+        prompt = ""
         movie_ratings = self.dataset.training_df[self.dataset.training_df["movieId"] == movie_id]
         example_ratings = movie_ratings.sample(n=min(self.shots, len(movie_ratings)), replace=False)
         i = -1
         for i, example in enumerate(example_ratings.itertuples()):
-            conversation.add_message({"role": "user", "content": self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, shot=i)})
-
-            if self.task == "conversational":
-                assistant_message = f'{{"rating": {self.convert_rating_to_str(example.rating)}}}'
-            else:
-                assistant_message = f'{self.convert_rating_to_str(example.rating)}\n\n\n'
-            conversation.add_message({"role": "assistant", "content": assistant_message})
+            prompt += self.generate_zeroshot_prompt(user_id=example.userId, movie_id=example.movieId, shot=i)
+            prompt += f'{self.convert_rating_to_str(example.rating)}\n\n\n'
 
         zero_shot = self.generate_zeroshot_prompt(user_id=user_id, movie_id=movie_id, shot=i + 1)
-        conversation.add_message({"role": "user", "content": zero_shot})
+        prompt += zero_shot
 
-        if self.task == "conversational":
-            conversation.messages.insert(0, {"role": "system", "content": 'Only reply with a JSON dictionary with the rating. No explanations.'})
-            return conversation
-        else:
-            return self.format_messages(conversation)
-
-    def format_messages(self, conversation: Conversation) -> str:
-        prompt = ""
-        for m in conversation:
-            prompt += m["content"]
         return prompt
 
 
@@ -321,7 +306,7 @@ FILENAME_PARAMETERS = {
 @click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
 @click.option("--hf-token", type=str)
-@click.option("--task", default="text2text-generation", type=click.Choice(["text2text-generation", "conversational"]))
+@click.option("--task", default="text2text-generation", type=click.Choice(["text2text-generation"]))
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
 @click.option("--with-context/--without-context", default=True)
@@ -389,7 +374,7 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, hf_token, task
             model_parameters["do_sample"] = True
             model_parameters["temperature"] = temperature
 
-        outputs = [p[-1].get("generated_text") or p[-1].get("content") for p in tqdm(predictor(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
+        outputs = [p[0]["generated_text"] for p in tqdm(predictor(MockListDataset(prompts), batch_size=batch_size, **model_parameters), total=len(prompts))]
         logger.info("Parsing outputs...")
         predictions = [parse_model_output(o, double_range=double_range) for o in outputs]
         truth = [row.rating for row in dataset.testing_df.itertuples()]
