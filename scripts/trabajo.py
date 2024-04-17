@@ -461,8 +461,14 @@ def main(ctx, testing_ratio, batch_size, initial_run_seed, model, task, likes_co
         logger.info(f"RMSE: {rmse}")
         aggregated_rmse.append(rmse)
 
-        logger.info(f"Classification report:\n{classification_report([str(x) for x in truth], [str(x) for x in predictions])}")
-        precision, recall, f1, _ = precision_recall_fscore_support([str(x) for x in truth], [str(x) for x in predictions], average="macro")
+        predictions_df = pd.DataFrame({
+            "Truth": truth,
+            "Prediction": predictions,
+            "UserID": [u for i, u in enumerate(dataset.testing_df["userId"]) if i not in unpredicted_indexes],
+        })
+
+        logger.info(f"Classification report:\n{classification_report(predictions_df['Truth'] >= 4.0, predictions_df['Prediction'] >= 4.0)}")
+        precision, recall, f1, _ = precision_recall_fscore_support(predictions_df["Truth"] >= 4.0, predictions_df["Prediction"] >= 4.0, average="macro", zero_division=0.0)
         aggregated_precision.append(precision)
         aggregated_recall.append(recall)
         aggregated_f1.append(f1)
