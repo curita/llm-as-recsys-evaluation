@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 from tqdm.auto import tqdm
 from transformers import pipeline
+from transformers.pipelines.base import Pipeline
 import torch
 from torch.utils.data import Dataset
 from sklearn.metrics import (
@@ -393,7 +394,7 @@ FILENAME_PARAMETERS = {
 
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential())
-def get_pipeline(task: str, model: str, model_parameters: dict):
+def get_pipeline(task: str, model: str, model_parameters: dict) -> Pipeline:
     return pipeline(
         task, model=model, device_map="auto", token=True, **model_parameters
     )
@@ -439,9 +440,7 @@ def get_pipeline(task: str, model: str, model_parameters: dict):
     "--precision", default="default", type=click.Choice(["default", "16", "8", "4"])
 )
 @click.option("--use-flash-attention-2", is_flag=True, default=False)
-@click.pass_context
 def main(
-    ctx,
     testing_ratio,
     batch_size,
     initial_run_seed,
@@ -470,19 +469,23 @@ def main(
     precision,
     use_flash_attention_2,
 ):
-    logger.info(
-        f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in ctx.params.items())}."
-    )
+    params = locals()
+    predictor = load_pipeline(task=task, precision=precision, use_flash_attention_2=use_flash_attention_2, model=model)
+    run_experiment(predictor, **params)
 
-    aggregated_rmse = []
-    aggregated_precision = []
-    aggregated_recall = []
-    aggregated_f1 = []
-    aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
-    aggregated_retried_prompts = 0
-    aggregated_retries = 0
-    aggregated_unpredicted = 0
 
+def get_default_task(model: str) -> str:
+    if "t5" in model.lower():
+        return "text2text-generation"
+    return "text-generation"
+
+
+def load_pipeline(
+    task: str = "text2text-generation",
+    precision: str = "default",
+    use_flash_attention_2: bool = False,
+    model: str = "google/flan-t5-base",
+) -> Pipeline:
     logger.info(f"Initializing {task} pipeline...")
 
     model_parameters = {}
@@ -526,9 +529,56 @@ def main(
         return inputs
 
     setattr(predictor, preprocess_method_name, _patched_preprocess)
+    return predictor
+
+
+def run_experiment(
+    predictor: Pipeline,
+    testing_ratio: float = 0.2,
+    batch_size: int = 8,
+    initial_run_seed: int = 0,
+    model: str = "google/flan-t5-base",
+    task: str = "text2text-generation",
+    likes_count: int = 10,
+    dislikes_count: int = 10,
+    with_context: bool = True,
+    likes_first: bool = True,
+    task_desc_version: int = 1,
+    shots: int = 0,
+    with_genre: bool = False,
+    with_global_rating_in_context: bool = False,
+    with_global_rating_in_task: bool = False,
+    temperature: float = 0.0,
+    popularity: list = None,
+    training_popularity: list = None,
+    runs: int = 1,
+    keep_trailing_zeroes: bool = True,
+    double_range: bool = False,
+    sample_header_version: int = 1,
+    rating_listing_version: int = 1,
+    context_header_version: int = 1,
+    answer_mark_version: int = 1,
+    numeric_user_identifier: bool = False,
+    precision: str = "default",
+    use_flash_attention_2: bool = False,
+) -> float:
+    initial_params = locals()
+    del initial_params["predictor"]
+    logger.info(
+        f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in initial_params.items())}."
+    )
+
+    aggregated_rmse = []
+    aggregated_precision = []
+    aggregated_recall = []
+    aggregated_f1 = []
+    aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
+    aggregated_retried_prompts = 0
+    aggregated_retries = 0
+    aggregated_unpredicted = 0
 
     for x in range(runs):
-        run_params = ctx.params.copy()
+        run_params = initial_params.copy()
         run_seed = initial_run_seed + x
         run_params["run_seed"] = run_seed
 
@@ -696,6 +746,10 @@ def main(
         logger.info(f"Unknown predictions: {len(unpredicted_indexes)}")
         aggregated_unpredicted += len(unpredicted_indexes)
 
+        if not predictions:
+            logger.info("All predictions are unknown, stopping experiment...")
+            return [float("inf"), 0.]
+
         logger.info("Reporting metrics...")
         rmse = mean_squared_error(truth, predictions, squared=False)
         logger.info(f"RMSE: {rmse}")
@@ -782,6 +836,8 @@ def main(
     logger.info(
         f"Aggregated Over Limit Prompts: {predictor.over_token_limit_count} ({round(predictor.over_token_limit_count * 100 / aggregated_prompts, 2)}%)"
     )
+
+    return [rmse_s.median(), f1_s.median()]
 
 
 if __name__ == "__main__":
