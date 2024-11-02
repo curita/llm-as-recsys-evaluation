@@ -6,7 +6,7 @@ from optuna.trial import TrialState
 import click
 from transformers.pipelines.base import Pipeline
 
-from trabajo import load_pipeline, run_experiment, get_default_task
+from run import load_pipeline, run_experiment, get_default_task
 
 
 def objective(trial: optuna.Trial, include_empty_answer_mark: bool, metric: str, predictors: list[Pipeline], **params):
