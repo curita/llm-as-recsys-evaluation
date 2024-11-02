@@ -627,7 +627,7 @@ def run_experiment(
             ):
                 predictor.tokenizer.pad_token_id = predictor.model.config.pad_token_id
             else:
-                if "llama" in model.lower():
+                if "llama-2" in model.lower():
                     # Reference: https://discuss.huggingface.co/t/llama2-pad-token-for-batched-inference/48020/2
                     predictor.tokenizer.pad_token = "[PAD]"
                     predictor.tokenizer.padding_side = "left"
