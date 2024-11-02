@@ -273,6 +273,8 @@ class PromptGenerator:
             5: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
             6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
             7: f"{self.get_user_identifier(shot=shot)} hasn't seen the movie {{}} yet. Predict how {self.get_user_identifier(shot=shot)} will likely rate the movie on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
+            8: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}} on a scale of {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}?",
+
         }
 
         movie_info = self.get_movie_info(
