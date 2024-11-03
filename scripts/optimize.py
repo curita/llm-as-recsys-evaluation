@@ -1,15 +1,20 @@
 import logging
 from functools import partial
 
+import click
 import optuna
 from optuna.trial import TrialState
-import click
+from run import get_default_task, load_pipeline, run_experiment
 from transformers.pipelines.base import Pipeline
 
-from run import load_pipeline, run_experiment, get_default_task
 
-
-def objective(trial: optuna.Trial, include_empty_answer_mark: bool, metric: str, predictors: list[Pipeline], **params):
+def objective(
+    trial: optuna.Trial,
+    include_empty_answer_mark: bool,
+    metric: str,
+    predictors: list[Pipeline],
+    **params,
+):
     task_desc_version = trial.suggest_categorical(
         "task_desc_version", list(range(1, 8 + 1))
     )
@@ -27,7 +32,9 @@ def objective(trial: optuna.Trial, include_empty_answer_mark: bool, metric: str,
         "context_header_version", list(range(1, 5 + 1))
     )
 
-    answer_mark_version_range = range(1, 4 + 1) if include_empty_answer_mark else range(2, 4 + 1)
+    answer_mark_version_range = (
+        range(1, 4 + 1) if include_empty_answer_mark else range(2, 4 + 1)
+    )
     answer_mark_version = trial.suggest_categorical(
         "answer_mark_version", list(answer_mark_version_range)
     )
@@ -67,7 +74,6 @@ def objective(trial: optuna.Trial, include_empty_answer_mark: bool, metric: str,
 
 
 def print_best_callback(study, trial):
-
     best_value = None
     best_trial = None
     for trial in study.best_trials:
@@ -76,7 +82,9 @@ def print_best_callback(study, trial):
             best_value = value
             best_trial = trial
 
-    print(f"Best Trial: {best_trial.number}. Best values: {best_trial.values}. Best params: {best_trial.params}")
+    print(
+        f"Best Trial: {best_trial.number}. Best values: {best_trial.values}. Best params: {best_trial.params}"
+    )
 
 
 @click.command
@@ -93,7 +101,16 @@ def print_best_callback(study, trial):
 @click.option("--include-empty-answer-mark/--exclude-empty-answer-mark", default=True)
 @click.option("--metric", default="f1", type=click.Choice(["f1", "rmse"]))
 def main(
-    testing_ratio, runs, models, precision, shots, study_name, trials, timeout, include_empty_answer_mark, metric
+    testing_ratio,
+    runs,
+    models,
+    precision,
+    shots,
+    study_name,
+    trials,
+    timeout,
+    include_empty_answer_mark,
+    metric,
 ):
     if metric == "f1":
         direction = "maximize"
@@ -108,7 +125,9 @@ def main(
     )
     predictors = []
     for model in models:
-        predictor = load_pipeline(task=get_default_task(model=model), precision=precision, model=model)
+        predictor = load_pipeline(
+            task=get_default_task(model=model), precision=precision, model=model
+        )
         predictors.append(predictor)
 
     partial_objective = partial(

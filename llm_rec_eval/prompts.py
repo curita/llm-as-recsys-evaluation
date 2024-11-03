@@ -1,8 +1,9 @@
-import pandas as pd
 from enum import Enum
 
-from llm_rec_eval.dataset import MovieLensDataSet
+import pandas as pd
+
 from llm_rec_eval.constants import POSSIBLE_VALUES
+from llm_rec_eval.dataset import MovieLensDataSet
 
 
 class SampleKind(Enum):
@@ -74,10 +75,7 @@ class PromptGenerator:
             return f"{rating:g}"
 
     def get_user_identifier(self, shot: int) -> str:
-        if self.numeric_user_identifier:
-            _id = shot + 1
-        else:
-            _id = chr(65 + shot)
+        _id = shot + 1 if self.numeric_user_identifier else chr(65 + shot)
 
         return f'User "{_id}"'
 
@@ -173,7 +171,6 @@ class PromptGenerator:
             6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
             7: f"{self.get_user_identifier(shot=shot)} hasn't seen the movie {{}} yet. Predict how {self.get_user_identifier(shot=shot)} will likely rate the movie on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
             8: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}} on a scale of {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}?",
-
         }
 
         movie_info = self.get_movie_info(

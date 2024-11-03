@@ -1,29 +1,28 @@
-from collections import defaultdict
-import json
-from pathlib import Path
-import re
 import csv
+import json
 import logging
+import re
+from collections import defaultdict
+from pathlib import Path
 
 import click
-import pandas as pd
 import numpy as np
-from tqdm.auto import tqdm
-from transformers import pipeline
-from transformers.pipelines.base import Pipeline
+import pandas as pd
 import torch
-from torch.utils.data import Dataset
 from sklearn.metrics import (
-    mean_squared_error,
     classification_report,
+    mean_squared_error,
     precision_recall_fscore_support,
 )
 from tenacity import retry, stop_after_attempt, wait_exponential
+from torch.utils.data import Dataset
+from tqdm.auto import tqdm
+from transformers import pipeline
+from transformers.pipelines.base import Pipeline
 
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
 from llm_rec_eval.dataset import MovieLensDataSet
 from llm_rec_eval.prompts import PromptGenerator
-
 
 logger = logging.getLogger(__name__)
 
@@ -61,10 +60,10 @@ def parse_model_output(output: str, double_range: bool) -> float:
 
         return value
 
-    except Exception:
+    except Exception as err:
         msg = f"Can't parse: {original_output!r}"
         logger.exception(msg)
-        raise ValueError(msg)
+        raise ValueError(msg) from err
 
 
 FILENAME_PARAMETERS = {
@@ -174,7 +173,12 @@ def main(
     use_flash_attention_2,
 ):
     params = locals()
-    predictor = load_pipeline(task=task, precision=precision, use_flash_attention_2=use_flash_attention_2, model=model)
+    predictor = load_pipeline(
+        task=task,
+        precision=precision,
+        use_flash_attention_2=use_flash_attention_2,
+        model=model,
+    )
     run_experiment(predictor, **params)
 
 
@@ -202,9 +206,9 @@ def load_pipeline(
 
     if use_flash_attention_2:
         model_parameters["torch_dtype"] = torch.float16
-        model_parameters.setdefault("model_kwargs", {})[
-            "attn_implementation"
-        ] = "flash_attention_2"
+        model_parameters.setdefault("model_kwargs", {})["attn_implementation"] = (
+            "flash_attention_2"
+        )
 
     predictor = get_pipeline(task=task, model=model, model_parameters=model_parameters)
     predictor.over_token_limit_count = 0
@@ -354,7 +358,7 @@ def run_experiment(
         ]
         logger.info("Parsing outputs...")
 
-        def retry_inference(prompt, max_retries=3):
+        def retry_inference(prompt, max_retries=3, model_parameters=model_parameters):
             model_parameters["do_sample"] = True
 
             for attempt in range(1, max_retries + 1):
@@ -384,7 +388,11 @@ def run_experiment(
                         retried_output,
                         retried_prediction,
                         retried_attempts,
-                    ) = retry_inference(prompt=prompts[index], max_retries=max_retries)
+                    ) = retry_inference(
+                        prompt=prompts[index],
+                        max_retries=max_retries,
+                        model_parameters=model_parameters,
+                    )
                     retries += retried_attempts
                     outputs[index] = retried_output
                     pred = retried_prediction
@@ -452,7 +460,7 @@ def run_experiment(
 
         if not predictions:
             logger.info("All predictions are unknown, stopping experiment...")
-            return [float("inf"), 0.]
+            return [float("inf"), 0.0]
 
         logger.info("Reporting metrics...")
         rmse = mean_squared_error(truth, predictions, squared=False)
