@@ -20,9 +20,9 @@ from sklearn.metrics import (
 )
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from src.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
-from src.dataset import MovieLensDataSet
-from src.prompts import PromptGenerator
+from llm_rec_eval.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
+from llm_rec_eval.dataset import MovieLensDataSet
+from llm_rec_eval.prompts import PromptGenerator
 
 
 logger = logging.getLogger(__name__)

@@ -1,0 +1,11 @@
+pandas
+numpy
+tqdm
+transformers
+torch
+scikit-learn
+click
+tenacity
+accelerate
+bitsandbytes
+optuna

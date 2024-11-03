@@ -1,7 +1,8 @@
 import pandas as pd
 from enum import Enum
 
-from src.dataset import MovieLensDataSet
+from llm_rec_eval.dataset import MovieLensDataSet
+from llm_rec_eval.constants import POSSIBLE_VALUES
 
 
 class SampleKind(Enum):

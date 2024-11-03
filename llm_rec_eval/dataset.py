@@ -1,7 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from src.constants import FREQUENCY_CATEGORIES
+from llm_rec_eval.constants import FREQUENCY_CATEGORIES
 
 
 def round_to_nearest_half(number):
