@@ -22,16 +22,14 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from src.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
+
 
 logger = logging.getLogger(__name__)
 
 
 def round_to_nearest_half(number):
     return round(number * 2) / 2
-
-
-POSSIBLE_VALUES = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0]
-FREQUENCY_CATEGORIES = ["rare", "unfrequent", "normal", "very_frequent"]
 
 
 class MovieLensDataSet:
