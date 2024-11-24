@@ -2,18 +2,11 @@ import csv
 import json
 import logging
 import re
-from collections import defaultdict
 from pathlib import Path
 
 import click
 import numpy as np
-import pandas as pd
 import torch
-from sklearn.metrics import (
-    classification_report,
-    mean_squared_error,
-    precision_recall_fscore_support,
-)
 from tenacity import retry, stop_after_attempt, wait_exponential
 from torch.utils.data import Dataset
 from tqdm.auto import tqdm
@@ -22,7 +15,7 @@ from transformers.pipelines.base import Pipeline
 
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
 from llm_rec_eval.dataset import MovieLensDataSet
-from llm_rec_eval.metrics import AggregatedStats
+from llm_rec_eval.metrics import AggregatedStats, report_metrics
 from llm_rec_eval.prompts import PromptGenerator
 
 logger = logging.getLogger(__name__)
@@ -177,7 +170,7 @@ def main(
     logger.info(
         f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in params.items())}."
     )
-    stats = AggregatedStats(possible_values=POSSIBLE_VALUES)
+    stats = AggregatedStats()
     predictor = load_pipeline(
         stats=stats,
         task=task,
@@ -274,7 +267,7 @@ class ExperimentRunner:
 
         self.save_results(prompts, outputs, predictions, dataset, run_params)
         self.remove_unpredicted_items(truth, predictions, unpredicted_indexes)
-        self.report_metrics(truth, predictions, dataset, unpredicted_indexes)
+        self.report_metrics(truth, predictions)
 
     def create_dataset(self, run_params):
         logger.info("Creating dataset...")
@@ -458,50 +451,17 @@ class ExperimentRunner:
         logger.info(f"Unknown predictions: {len(unpredicted_indexes)}")
         self.stats.increment_unpredicted(len(unpredicted_indexes))
 
-    def report_metrics(self, truth, predictions, dataset, unpredicted_indexes):
+    def report_metrics(self, truth, predictions):
         if not predictions:
             logger.info("All predictions are unknown, stopping experiment...")
             return
 
-        logger.info("Reporting metrics...")
-        rmse = mean_squared_error(truth, predictions, squared=False)
-        logger.info(f"RMSE: {rmse}")
-        self.stats.add_rmse(rmse)
-
-        predictions_df = pd.DataFrame(
-            {
-                "Truth": truth,
-                "Prediction": predictions,
-                "UserID": [
-                    u
-                    for i, u in enumerate(dataset.testing_df["userId"])
-                    if i not in unpredicted_indexes
-                ],
-            }
-        )
-
-        logger.info(
-            f"Classification report:\n{classification_report(predictions_df['Truth'] >= 4.0, predictions_df['Prediction'] >= 4.0)}"
-        )
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            predictions_df["Truth"] >= 4.0,
-            predictions_df["Prediction"] >= 4.0,
-            average="macro",
-            zero_division=0.0,
-        )
-        self.stats.add_precision(precision)
-        self.stats.add_recall(recall)
-        self.stats.add_f1(f1)
-
-        value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
-        for p in predictions:
-            value_counts[p] += 1
-            self.stats.add_value_count(p)
-        distribution = {
-            rating: round((count * 100 / len(predictions)), 2)
-            for rating, count in sorted(value_counts.items())
-        }
-        logger.info(f"Distribution: {distribution}")
+        stats = report_metrics(truth, predictions)
+        self.stats.add_rmse(stats.rmse)
+        self.stats.add_precision(stats.precision)
+        self.stats.add_recall(stats.recall)
+        self.stats.add_f1(stats.f1)
+        self.stats.update_value_count(stats.histogram)
 
 
 def run_experiment(predictor: Pipeline, stats: AggregatedStats, **params):
