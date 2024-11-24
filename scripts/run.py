@@ -174,6 +174,9 @@ def main(
     use_flash_attention_2,
 ):
     params = locals()
+    logger.info(
+        f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in params.items())}."
+    )
     stats = AggregatedStats(possible_values=POSSIBLE_VALUES)
     predictor = load_pipeline(
         stats=stats,
@@ -288,6 +291,7 @@ class ExperimentRunner:
             prompt_generator(user_id=row.userId, movie_id=row.movieId)
             for row in dataset.testing_df.itertuples()
         ]
+        logger.info(f"Prompt Example:\n{prompts[0]}")
         self.stats.increment_prompts_count(len(prompts))
         return prompts
 
@@ -373,6 +377,9 @@ class ExperimentRunner:
                     unpredicted_indexes.add(index)
                     pred = "N/A"
             predictions.append(pred)
+
+        logger.info(f"Retried prompts: {retried_prompts}")
+        logger.info(f"Retries: {retries}")
         self.stats.increment_retried_prompts(retried_prompts)
         self.stats.increment_retries(retries)
         return predictions, unpredicted_indexes
