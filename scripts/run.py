@@ -240,139 +240,117 @@ def load_pipeline(
     return predictor
 
 
-def run_experiment(
-    predictor: Pipeline,
-    testing_ratio: float = 0.2,
-    batch_size: int = 8,
-    initial_run_seed: int = 0,
-    model: str = "google/flan-t5-base",
-    task: str = "text2text-generation",
-    likes_count: int = 10,
-    dislikes_count: int = 10,
-    with_context: bool = True,
-    likes_first: bool = True,
-    task_desc_version: int = 1,
-    shots: int = 0,
-    with_genre: bool = False,
-    with_global_rating_in_context: bool = False,
-    with_global_rating_in_task: bool = False,
-    temperature: float = 0.0,
-    popularity: list = None,
-    training_popularity: list = None,
-    runs: int = 1,
-    keep_trailing_zeroes: bool = True,
-    double_range: bool = False,
-    sample_header_version: int = 1,
-    rating_listing_version: int = 1,
-    context_header_version: int = 1,
-    answer_mark_version: int = 1,
-    numeric_user_identifier: bool = False,
-    precision: str = "default",
-    use_flash_attention_2: bool = False,
-) -> float:
-    initial_params = locals()
-    del initial_params["predictor"]
-    logger.info(
-        f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in initial_params.items())}."
-    )
+class ExperimentRunner:
+    def __init__(self, predictor, **params):
+        self.predictor = predictor
+        self.params = params
+        self.aggregated_rmse = []
+        self.aggregated_precision = []
+        self.aggregated_recall = []
+        self.aggregated_f1 = []
+        self.aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
+        self.aggregated_prompts_count = 0
+        self.aggregated_retried_prompts = 0
+        self.aggregated_retries = 0
+        self.aggregated_unpredicted = 0
 
-    aggregated_rmse = []
-    aggregated_precision = []
-    aggregated_recall = []
-    aggregated_f1 = []
-    aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
-    aggregated_retried_prompts = 0
-    aggregated_retries = 0
-    aggregated_unpredicted = 0
+    def run(self):
+        for x in range(self.params["runs"]):
+            self.run_single_experiment(x)
+        self.report_aggregated_stats()
 
-    for x in range(runs):
-        run_params = initial_params.copy()
-        run_seed = initial_run_seed + x
+    def run_single_experiment(self, run_index):
+        run_params = self.params.copy()
+        run_seed = self.params["initial_run_seed"] + run_index
         run_params["run_seed"] = run_seed
 
         logger.info(f"Run {run_seed=}.")
-
         np.random.seed(run_seed)
         torch.manual_seed(run_seed)
 
+        dataset = self.create_dataset(run_params)
+        prompts = self.generate_prompts(dataset, run_params)
+        outputs = self.run_model(prompts)
+        predictions, unpredicted_indexes = self.parse_outputs(outputs, prompts)
+        truth = [row.rating for row in dataset.testing_df.itertuples()]
+
+        self.save_results(prompts, outputs, predictions, dataset, run_params)
+        self.remove_unpredicted_items(truth, predictions, unpredicted_indexes)
+        self.report_metrics(truth, predictions, dataset, unpredicted_indexes)
+
+    def create_dataset(self, run_params):
         logger.info("Creating dataset...")
-        dataset = MovieLensDataSet(
-            testing_ratio=testing_ratio,
-            training_popularity=training_popularity,
-            popularity=popularity,
+        return MovieLensDataSet(
+            testing_ratio=self.params["testing_ratio"],
+            training_popularity=self.params["training_popularity"],
+            popularity=self.params["popularity"],
         )
 
+    def generate_prompts(self, dataset, run_params):
         logger.info("Generating prompts...")
-
         prompt_generator = PromptGenerator(dataset=dataset, **run_params)
         prompts = [
             prompt_generator(user_id=row.userId, movie_id=row.movieId)
             for row in dataset.testing_df.itertuples()
         ]
-        logger.info(f"Prompt Example:\n{prompts[0]}")
+        self.aggregated_prompts_count += len(prompts)
+        return prompts
 
+    def run_model(self, prompts):
         logger.info("Running model...")
-        model_parameters = {}
-        if temperature == 0.0:
-            model_parameters["do_sample"] = False
-        else:
-            model_parameters["do_sample"] = True
-            model_parameters["temperature"] = temperature
-
-        if task == "text-generation":
-            model_parameters["return_full_text"] = False
-            model_parameters["max_new_tokens"] = 20
-            # NOTE: Needed for batching, as it's not set automatically in the pipeline like with other tasks
-
-            if (
-                predictor.tokenizer.pad_token_id
-                and not predictor.model.config.pad_token_id
-            ):
-                predictor.model.config.pad_token_id = predictor.tokenizer.pad_token_id
-            elif (
-                not predictor.tokenizer.pad_token_id
-                and predictor.model.config.pad_token_id
-            ):
-                predictor.tokenizer.pad_token_id = predictor.model.config.pad_token_id
-            else:
-                if "llama-2" in model.lower():
-                    # Reference: https://discuss.huggingface.co/t/llama2-pad-token-for-batched-inference/48020/2
-                    predictor.tokenizer.pad_token = "[PAD]"
-                    predictor.tokenizer.padding_side = "left"
-                else:
-                    predictor.tokenizer.pad_token_id = (
-                        predictor.model.config.eos_token_id
-                    )
-                    predictor.model.config.pad_token_id = (
-                        predictor.model.config.eos_token_id
-                    )
-
-        outputs = [
+        model_parameters = self.get_model_parameters()
+        return [
             p[0]["generated_text"]
             for p in tqdm(
-                predictor(
-                    MockListDataset(prompts), batch_size=batch_size, **model_parameters
+                self.predictor(
+                    MockListDataset(prompts),
+                    batch_size=self.params["batch_size"],
+                    **model_parameters,
                 ),
                 total=len(prompts),
             )
         ]
-        logger.info("Parsing outputs...")
 
-        def retry_inference(prompt, max_retries=3, model_parameters=model_parameters):
+    def get_model_parameters(self):
+        model_parameters = {}
+        if self.params["temperature"] == 0.0:
+            model_parameters["do_sample"] = False
+        else:
             model_parameters["do_sample"] = True
+            model_parameters["temperature"] = self.params["temperature"]
 
-            for attempt in range(1, max_retries + 1):
-                logger.info(f"Retrying, {attempt=}")
-                output = predictor(prompt, **model_parameters)[0]["generated_text"]
-                try:
-                    pred = parse_model_output(output, double_range=double_range)
-                except ValueError:
-                    continue
+        if self.params["task"] == "text-generation":
+            model_parameters["return_full_text"] = False
+            model_parameters["max_new_tokens"] = 20
+            if (
+                self.predictor.tokenizer.pad_token_id
+                and not self.predictor.model.config.pad_token_id
+            ):
+                self.predictor.model.config.pad_token_id = (
+                    self.predictor.tokenizer.pad_token_id
+                )
+            elif (
+                not self.predictor.tokenizer.pad_token_id
+                and self.predictor.model.config.pad_token_id
+            ):
+                self.predictor.tokenizer.pad_token_id = (
+                    self.predictor.model.config.pad_token_id
+                )
+            else:
+                if "llama-2" in self.params["model"].lower():
+                    self.predictor.tokenizer.pad_token = "[PAD]"
+                    self.predictor.tokenizer.padding_side = "left"
                 else:
-                    return output, pred, attempt
+                    self.predictor.tokenizer.pad_token_id = (
+                        self.predictor.model.config.eos_token_id
+                    )
+                    self.predictor.model.config.pad_token_id = (
+                        self.predictor.model.config.eos_token_id
+                    )
+        return model_parameters
 
-            raise ValueError("Couldn't get prediction")
-
+    def parse_outputs(self, outputs, prompts):
+        logger.info("Parsing outputs...")
         retried_prompts = 0
         retries = 0
         max_retries = 3
@@ -380,7 +358,7 @@ def run_experiment(
         unpredicted_indexes = set()
         for index, out in enumerate(outputs):
             try:
-                pred = parse_model_output(out, double_range=double_range)
+                pred = parse_model_output(out, double_range=self.params["double_range"])
             except ValueError:
                 try:
                     retried_prompts += 1
@@ -388,10 +366,9 @@ def run_experiment(
                         retried_output,
                         retried_prediction,
                         retried_attempts,
-                    ) = retry_inference(
+                    ) = self.retry_inference(
                         prompt=prompts[index],
                         max_retries=max_retries,
-                        model_parameters=model_parameters,
                     )
                     retries += retried_attempts
                     outputs[index] = retried_output
@@ -400,13 +377,31 @@ def run_experiment(
                     retries += max_retries
                     unpredicted_indexes.add(index)
                     pred = "N/A"
-
             predictions.append(pred)
+        self.aggregated_retried_prompts += retried_prompts
+        self.aggregated_retries += retries
+        return predictions, unpredicted_indexes
 
-        truth = [row.rating for row in dataset.testing_df.itertuples()]
+    def retry_inference(self, prompt, max_retries=3):
+        model_parameters = self.get_model_parameters()
+        model_parameters["do_sample"] = True
 
+        for attempt in range(1, max_retries + 1):
+            logger.info(f"Retrying, {attempt=}")
+            output = self.predictor(prompt, **model_parameters)[0]["generated_text"]
+            try:
+                pred = parse_model_output(
+                    output, double_range=self.params["double_range"]
+                )
+            except ValueError:
+                continue
+            else:
+                return output, pred, attempt
+
+        raise ValueError("Couldn't get prediction")
+
+    def save_results(self, prompts, outputs, predictions, dataset, run_params):
         logger.info("Dumping results...")
-
         folder_name = f"experiment_{'_'.join(k + '=' + str(run_params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace(
             "/", ":"
         )
@@ -450,22 +445,26 @@ def run_experiment(
                 )
                 parameters = ""
 
+    def remove_unpredicted_items(self, truth, predictions, unpredicted_indexes):
         logger.info("Removing unpredicted items...")
-        truth = [value for i, value in enumerate(truth) if i not in unpredicted_indexes]
-        predictions = [
+        truth[:] = [
+            value for i, value in enumerate(truth) if i not in unpredicted_indexes
+        ]
+        predictions[:] = [
             value for i, value in enumerate(predictions) if i not in unpredicted_indexes
         ]
         logger.info(f"Unknown predictions: {len(unpredicted_indexes)}")
-        aggregated_unpredicted += len(unpredicted_indexes)
+        self.aggregated_unpredicted += len(unpredicted_indexes)
 
+    def report_metrics(self, truth, predictions, dataset, unpredicted_indexes):
         if not predictions:
             logger.info("All predictions are unknown, stopping experiment...")
-            return [float("inf"), 0.0]
+            return
 
         logger.info("Reporting metrics...")
         rmse = mean_squared_error(truth, predictions, squared=False)
         logger.info(f"RMSE: {rmse}")
-        aggregated_rmse.append(rmse)
+        self.aggregated_rmse.append(rmse)
 
         predictions_df = pd.DataFrame(
             {
@@ -488,68 +487,64 @@ def run_experiment(
             average="macro",
             zero_division=0.0,
         )
-        aggregated_precision.append(precision)
-        aggregated_recall.append(recall)
-        aggregated_f1.append(f1)
+        self.aggregated_precision.append(precision)
+        self.aggregated_recall.append(recall)
+        self.aggregated_f1.append(f1)
 
         value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
         for p in predictions:
             value_counts[p] += 1
-            aggregated_value_counts[p] += 1
+            self.aggregated_value_counts[p] += 1
         distribution = {
             rating: round((count * 100 / len(predictions)), 2)
             for rating, count in sorted(value_counts.items())
         }
         logger.info(f"Distribution: {distribution}")
 
-        aggregated_retried_prompts += retried_prompts
-        logger.info(f"Retried prompts: {retried_prompts}")
+    def report_aggregated_stats(self):
+        logger.info("Aggregated stats.")
+        rmse_s = pd.Series(self.aggregated_rmse)
+        logger.info(
+            f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}"
+        )
 
-        aggregated_retries += retries
-        logger.info(f"Retries: {retries}")
+        precision_s = pd.Series(self.aggregated_precision)
+        logger.info(
+            f"Aggregated Precision. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}"
+        )
 
-    logger.info("Aggregated stats.")
-    rmse_s = pd.Series(aggregated_rmse)
-    logger.info(
-        f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}"
-    )
+        recall_s = pd.Series(self.aggregated_recall)
+        logger.info(
+            f"Aggregated Recall. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}"
+        )
 
-    precision_s = pd.Series(aggregated_precision)
-    logger.info(
-        f"Aggregated Precision. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}"
-    )
+        f1_s = pd.Series(self.aggregated_f1)
+        logger.info(f"Aggregated F1. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
 
-    recall_s = pd.Series(aggregated_recall)
-    logger.info(
-        f"Aggregated Recall. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}"
-    )
+        total = sum(self.aggregated_value_counts.values())
+        aggregated_distribution = {
+            rating: round((count * 100 / total), 2)
+            for rating, count in sorted(self.aggregated_value_counts.items())
+        }
+        logger.info(f"Aggregated Distribution: {aggregated_distribution}")
 
-    f1_s = pd.Series(aggregated_f1)
-    logger.info(f"Aggregated F1. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
+        logger.info(
+            f"Aggregated Retried Prompts: {self.aggregated_retried_prompts} ({round(self.aggregated_retried_prompts * 100 / self.aggregated_prompts_count, 2)}%)"
+        )
+        logger.info(f"Aggregated Retries: {self.aggregated_retries}")
 
-    total = sum(aggregated_value_counts.values())
-    aggregated_distribution = {
-        rating: round((count * 100 / total), 2)
-        for rating, count in sorted(aggregated_value_counts.items())
-    }
-    logger.info(f"Aggregated Distribution: {aggregated_distribution}")
+        logger.info(
+            f"Aggregated Unknown Predictions: {self.aggregated_unpredicted} ({round(self.aggregated_unpredicted * 100 / self.aggregated_prompts_count, 2)}%)"
+        )
 
-    aggregated_prompts = len(prompts) * runs
+        logger.info(
+            f"Aggregated Over Limit Prompts: {self.predictor.over_token_limit_count} ({round(self.predictor.over_token_limit_count * 100 / self.aggregated_prompts_count, 2)}%)"
+        )
 
-    logger.info(
-        f"Aggregated Retried Prompts: {aggregated_retried_prompts} ({round(aggregated_retried_prompts * 100 / aggregated_prompts, 2)}%)"
-    )
-    logger.info(f"Aggregated Retries: {aggregated_retries}")
 
-    logger.info(
-        f"Aggregated Unknown Predictions: {aggregated_unpredicted} ({round(aggregated_unpredicted * 100 / aggregated_prompts, 2)}%)"
-    )
-
-    logger.info(
-        f"Aggregated Over Limit Prompts: {predictor.over_token_limit_count} ({round(predictor.over_token_limit_count * 100 / aggregated_prompts, 2)}%)"
-    )
-
-    return [rmse_s.median(), f1_s.median()]
+def run_experiment(predictor: Pipeline, **params):
+    runner = ExperimentRunner(predictor, **params)
+    runner.run()
 
 
 if __name__ == "__main__":
