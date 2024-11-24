@@ -22,6 +22,7 @@ from transformers.pipelines.base import Pipeline
 
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
 from llm_rec_eval.dataset import MovieLensDataSet
+from llm_rec_eval.metrics import AggregatedStats
 from llm_rec_eval.prompts import PromptGenerator
 
 logger = logging.getLogger(__name__)
@@ -173,13 +174,15 @@ def main(
     use_flash_attention_2,
 ):
     params = locals()
+    stats = AggregatedStats(possible_values=POSSIBLE_VALUES)
     predictor = load_pipeline(
+        stats=stats,
         task=task,
         precision=precision,
         use_flash_attention_2=use_flash_attention_2,
         model=model,
     )
-    run_experiment(predictor, **params)
+    run_experiment(predictor=predictor, stats=stats, **params)
 
 
 def get_default_task(model: str) -> str:
@@ -189,6 +192,7 @@ def get_default_task(model: str) -> str:
 
 
 def load_pipeline(
+    stats: AggregatedStats,
     task: str = "text2text-generation",
     precision: str = "default",
     use_flash_attention_2: bool = False,
@@ -211,7 +215,6 @@ def load_pipeline(
         )
 
     predictor = get_pipeline(task=task, model=model, model_parameters=model_parameters)
-    predictor.over_token_limit_count = 0
     preprocess_method_name = (
         "_parse_and_tokenize"
         if hasattr(predictor, "_parse_and_tokenize")
@@ -232,7 +235,7 @@ def load_pipeline(
         input_length = inputs["input_ids"].shape[-1]
 
         if input_length > max_token_length:
-            predictor.over_token_limit_count += 1
+            stats.increment_over_token_limit()
 
         return inputs
 
@@ -241,23 +244,15 @@ def load_pipeline(
 
 
 class ExperimentRunner:
-    def __init__(self, predictor, **params):
+    def __init__(self, predictor, stats, **params):
         self.predictor = predictor
+        self.stats = stats
         self.params = params
-        self.aggregated_rmse = []
-        self.aggregated_precision = []
-        self.aggregated_recall = []
-        self.aggregated_f1 = []
-        self.aggregated_value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
-        self.aggregated_prompts_count = 0
-        self.aggregated_retried_prompts = 0
-        self.aggregated_retries = 0
-        self.aggregated_unpredicted = 0
 
     def run(self):
         for x in range(self.params["runs"]):
             self.run_single_experiment(x)
-        self.report_aggregated_stats()
+        self.stats.report()
 
     def run_single_experiment(self, run_index):
         run_params = self.params.copy()
@@ -293,7 +288,7 @@ class ExperimentRunner:
             prompt_generator(user_id=row.userId, movie_id=row.movieId)
             for row in dataset.testing_df.itertuples()
         ]
-        self.aggregated_prompts_count += len(prompts)
+        self.stats.increment_prompts_count(len(prompts))
         return prompts
 
     def run_model(self, prompts):
@@ -378,8 +373,8 @@ class ExperimentRunner:
                     unpredicted_indexes.add(index)
                     pred = "N/A"
             predictions.append(pred)
-        self.aggregated_retried_prompts += retried_prompts
-        self.aggregated_retries += retries
+        self.stats.increment_retried_prompts(retried_prompts)
+        self.stats.increment_retries(retries)
         return predictions, unpredicted_indexes
 
     def retry_inference(self, prompt, max_retries=3):
@@ -454,7 +449,7 @@ class ExperimentRunner:
             value for i, value in enumerate(predictions) if i not in unpredicted_indexes
         ]
         logger.info(f"Unknown predictions: {len(unpredicted_indexes)}")
-        self.aggregated_unpredicted += len(unpredicted_indexes)
+        self.stats.increment_unpredicted(len(unpredicted_indexes))
 
     def report_metrics(self, truth, predictions, dataset, unpredicted_indexes):
         if not predictions:
@@ -464,7 +459,7 @@ class ExperimentRunner:
         logger.info("Reporting metrics...")
         rmse = mean_squared_error(truth, predictions, squared=False)
         logger.info(f"RMSE: {rmse}")
-        self.aggregated_rmse.append(rmse)
+        self.stats.add_rmse(rmse)
 
         predictions_df = pd.DataFrame(
             {
@@ -487,63 +482,23 @@ class ExperimentRunner:
             average="macro",
             zero_division=0.0,
         )
-        self.aggregated_precision.append(precision)
-        self.aggregated_recall.append(recall)
-        self.aggregated_f1.append(f1)
+        self.stats.add_precision(precision)
+        self.stats.add_recall(recall)
+        self.stats.add_f1(f1)
 
         value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
         for p in predictions:
             value_counts[p] += 1
-            self.aggregated_value_counts[p] += 1
+            self.stats.add_value_count(p)
         distribution = {
             rating: round((count * 100 / len(predictions)), 2)
             for rating, count in sorted(value_counts.items())
         }
         logger.info(f"Distribution: {distribution}")
 
-    def report_aggregated_stats(self):
-        logger.info("Aggregated stats.")
-        rmse_s = pd.Series(self.aggregated_rmse)
-        logger.info(
-            f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}"
-        )
 
-        precision_s = pd.Series(self.aggregated_precision)
-        logger.info(
-            f"Aggregated Precision. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}"
-        )
-
-        recall_s = pd.Series(self.aggregated_recall)
-        logger.info(
-            f"Aggregated Recall. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}"
-        )
-
-        f1_s = pd.Series(self.aggregated_f1)
-        logger.info(f"Aggregated F1. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
-
-        total = sum(self.aggregated_value_counts.values())
-        aggregated_distribution = {
-            rating: round((count * 100 / total), 2)
-            for rating, count in sorted(self.aggregated_value_counts.items())
-        }
-        logger.info(f"Aggregated Distribution: {aggregated_distribution}")
-
-        logger.info(
-            f"Aggregated Retried Prompts: {self.aggregated_retried_prompts} ({round(self.aggregated_retried_prompts * 100 / self.aggregated_prompts_count, 2)}%)"
-        )
-        logger.info(f"Aggregated Retries: {self.aggregated_retries}")
-
-        logger.info(
-            f"Aggregated Unknown Predictions: {self.aggregated_unpredicted} ({round(self.aggregated_unpredicted * 100 / self.aggregated_prompts_count, 2)}%)"
-        )
-
-        logger.info(
-            f"Aggregated Over Limit Prompts: {self.predictor.over_token_limit_count} ({round(self.predictor.over_token_limit_count * 100 / self.aggregated_prompts_count, 2)}%)"
-        )
-
-
-def run_experiment(predictor: Pipeline, **params):
-    runner = ExperimentRunner(predictor, **params)
+def run_experiment(predictor: Pipeline, stats: AggregatedStats, **params):
+    runner = ExperimentRunner(predictor, stats, **params)
     runner.run()
 
 
