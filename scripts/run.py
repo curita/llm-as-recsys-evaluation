@@ -1,8 +1,5 @@
-import csv
-import json
 import logging
 import re
-from pathlib import Path
 
 import click
 import numpy as np
@@ -15,6 +12,7 @@ from llm_rec_eval.dataset import MovieLensDataSet, MockListDataset
 from llm_rec_eval.metrics import AggregatedStats, report_metrics
 from llm_rec_eval.pipeline import get_inference_kwargs, load_pipeline
 from llm_rec_eval.prompts import PromptGenerator
+from llm_rec_eval.save import save_results
 
 logger = logging.getLogger(__name__)
 
@@ -45,35 +43,6 @@ def parse_model_output(output: str, double_range: bool) -> float:
         msg = f"Can't parse: {original_output!r}"
         logger.exception(msg)
         raise ValueError(msg) from err
-
-
-FILENAME_PARAMETERS = {
-    "RATIO": "testing_ratio",
-    "SEED": "run_seed",
-    "M": "model",
-    "L": "likes_count",
-    "D": "dislikes_count",
-    "C": "with_context",
-    "F": "likes_first",
-    "V": "task_desc_version",
-    "S": "shots",
-    "G": "with_genre",
-    "CR": "with_global_rating_in_context",
-    "TR": "with_global_rating_in_task",
-    "T": "temperature",
-    "P": "popularity",
-    "TP": "training_popularity",
-    "Z": "keep_trailing_zeroes",
-    "DO": "double_range",
-    "SH": "sample_header_version",
-    "RL": "rating_listing_version",
-    "H": "context_header_version",
-    "AM": "answer_mark_version",
-    "N": "numeric_user_identifier",
-    "B": "batch_size",
-    "PR": "precision",
-    "FL": "use_flash_attention_2",
-}
 
 
 @click.command()
@@ -179,7 +148,7 @@ class ExperimentRunner:
         predictions, unpredicted_indexes = self.parse_outputs(outputs, prompts)
         truth = [row.rating for row in dataset.testing_df.itertuples()]
 
-        self.save_results(prompts, outputs, predictions, dataset, run_params)
+        save_results(prompts, outputs, predictions, dataset, run_params)
         self.remove_unpredicted_items(truth, predictions, unpredicted_indexes)
         self.report_metrics(truth, predictions)
 
@@ -274,51 +243,6 @@ class ExperimentRunner:
                 return output, pred, attempt
 
         raise ValueError("Couldn't get prediction")
-
-    def save_results(self, prompts, outputs, predictions, dataset, run_params):
-        logger.info("Dumping results...")
-        folder_name = f"experiment_{'_'.join(k + '=' + str(run_params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace(
-            "/", ":"
-        )
-        output_folder = Path("results") / folder_name
-        output_folder.mkdir(parents=True, exist_ok=True)
-        output_file = output_folder / "results.csv"
-
-        logger.info(f"Path: {output_file}")
-
-        with open(output_file, "w", newline="") as csvfile:
-            writer = csv.DictWriter(
-                csvfile,
-                fieldnames=[
-                    "Prompt",
-                    "Movie",
-                    "MovieID",
-                    "UserID",
-                    "Output",
-                    "Prediction",
-                    "Truth",
-                    "Parameters",
-                ],
-            )
-
-            writer.writeheader()
-            parameters = json.dumps(run_params)
-            for prmpt, out, pred, row in zip(
-                prompts, outputs, predictions, dataset.testing_df.itertuples()
-            ):
-                writer.writerow(
-                    {
-                        "Prompt": prmpt,
-                        "Movie": dataset.get_movie_name(row.movieId),
-                        "MovieID": row.movieId,
-                        "UserID": row.userId,
-                        "Output": out,
-                        "Prediction": str(pred),
-                        "Truth": str(row.rating),
-                        "Parameters": parameters,
-                    }
-                )
-                parameters = ""
 
     def remove_unpredicted_items(self, truth, predictions, unpredicted_indexes):
         logger.info("Removing unpredicted items...")
