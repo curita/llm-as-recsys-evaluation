@@ -7,14 +7,13 @@ from pathlib import Path
 import click
 import numpy as np
 import torch
-from tenacity import retry, stop_after_attempt, wait_exponential
 from tqdm.auto import tqdm
-from transformers import pipeline
 from transformers.pipelines.base import Pipeline
 
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
 from llm_rec_eval.dataset import MovieLensDataSet, MockListDataset
 from llm_rec_eval.metrics import AggregatedStats, report_metrics
+from llm_rec_eval.pipeline import get_inference_kwargs, load_pipeline
 from llm_rec_eval.prompts import PromptGenerator
 
 logger = logging.getLogger(__name__)
@@ -71,18 +70,10 @@ FILENAME_PARAMETERS = {
     "H": "context_header_version",
     "AM": "answer_mark_version",
     "N": "numeric_user_identifier",
-    "TK": "task",
     "B": "batch_size",
     "PR": "precision",
     "FL": "use_flash_attention_2",
 }
-
-
-@retry(stop=stop_after_attempt(5), wait=wait_exponential())
-def get_pipeline(task: str, model: str, model_parameters: dict) -> Pipeline:
-    return pipeline(
-        task, model=model, device_map="auto", token=True, **model_parameters
-    )
 
 
 @click.command()
@@ -90,11 +81,6 @@ def get_pipeline(task: str, model: str, model_parameters: dict) -> Pipeline:
 @click.option("--batch-size", default=8, type=int)
 @click.option("--initial-run-seed", default=0, type=int)
 @click.option("--model", default="google/flan-t5-base", type=str)
-@click.option(
-    "--task",
-    default="text2text-generation",
-    type=click.Choice(["text2text-generation", "text-generation"]),
-)
 @click.option("--likes-count", default=10, type=int)
 @click.option("--dislikes-count", default=10, type=int)
 @click.option("--with-context/--without-context", default=True)
@@ -130,7 +116,6 @@ def main(
     batch_size,
     initial_run_seed,
     model,
-    task,
     likes_count,
     dislikes_count,
     with_context,
@@ -161,70 +146,11 @@ def main(
     stats = AggregatedStats()
     predictor = load_pipeline(
         stats=stats,
-        task=task,
         precision=precision,
         use_flash_attention_2=use_flash_attention_2,
         model=model,
     )
     run_experiment(predictor=predictor, stats=stats, **params)
-
-
-def get_default_task(model: str) -> str:
-    if "t5" in model.lower():
-        return "text2text-generation"
-    return "text-generation"
-
-
-def load_pipeline(
-    stats: AggregatedStats,
-    task: str = "text2text-generation",
-    precision: str = "default",
-    use_flash_attention_2: bool = False,
-    model: str = "google/flan-t5-base",
-) -> Pipeline:
-    logger.info(f"Initializing {task} pipeline...")
-
-    model_parameters = {}
-    if precision == "16":
-        model_parameters["torch_dtype"] = torch.float16
-    elif precision == "8":
-        model_parameters["model_kwargs"] = {"load_in_8bit": True}
-    elif precision == "4":
-        model_parameters["model_kwargs"] = {"load_in_4bit": True}
-
-    if use_flash_attention_2:
-        model_parameters["torch_dtype"] = torch.float16
-        model_parameters.setdefault("model_kwargs", {})["attn_implementation"] = (
-            "flash_attention_2"
-        )
-
-    predictor = get_pipeline(task=task, model=model, model_parameters=model_parameters)
-    preprocess_method_name = (
-        "_parse_and_tokenize"
-        if hasattr(predictor, "_parse_and_tokenize")
-        else "preprocess"
-    )
-    original_preprocess = getattr(predictor, preprocess_method_name)
-    # This is the max sequence length. Does it mean the model doesn't output responses longer than this, or it doesn't work well in contexts longer than this?
-    max_token_length = getattr(predictor.model.config, "max_position_embeddings", None)
-    if not max_token_length and "t5" in model.lower():
-        # https://huggingface.co/google/flan-t5-xxl/discussions/41#65c3c3706b793334ef78dffc
-        max_token_length = 1024
-
-    logger.info(f"Model context limit: {max_token_length}")
-
-    def _patched_preprocess(*args, **kwargs):
-        inputs = original_preprocess(*args, **kwargs)
-        # NOTE: Only valid for PyTorch tensors
-        input_length = inputs["input_ids"].shape[-1]
-
-        if input_length > max_token_length:
-            stats.increment_over_token_limit()
-
-        return inputs
-
-    setattr(predictor, preprocess_method_name, _patched_preprocess)
-    return predictor
 
 
 class ExperimentRunner:
@@ -278,56 +204,20 @@ class ExperimentRunner:
 
     def run_model(self, prompts):
         logger.info("Running model...")
-        model_parameters = self.get_model_parameters()
+        inference_kwargs = get_inference_kwargs(
+            model=self.params["model"], temperature=self.params["temperature"]
+        )
         return [
             p[0]["generated_text"]
             for p in tqdm(
                 self.predictor(
                     MockListDataset(prompts),
                     batch_size=self.params["batch_size"],
-                    **model_parameters,
+                    **inference_kwargs,
                 ),
                 total=len(prompts),
             )
         ]
-
-    def get_model_parameters(self):
-        model_parameters = {}
-        if self.params["temperature"] == 0.0:
-            model_parameters["do_sample"] = False
-        else:
-            model_parameters["do_sample"] = True
-            model_parameters["temperature"] = self.params["temperature"]
-
-        if self.params["task"] == "text-generation":
-            model_parameters["return_full_text"] = False
-            model_parameters["max_new_tokens"] = 20
-            if (
-                self.predictor.tokenizer.pad_token_id
-                and not self.predictor.model.config.pad_token_id
-            ):
-                self.predictor.model.config.pad_token_id = (
-                    self.predictor.tokenizer.pad_token_id
-                )
-            elif (
-                not self.predictor.tokenizer.pad_token_id
-                and self.predictor.model.config.pad_token_id
-            ):
-                self.predictor.tokenizer.pad_token_id = (
-                    self.predictor.model.config.pad_token_id
-                )
-            else:
-                if "llama-2" in self.params["model"].lower():
-                    self.predictor.tokenizer.pad_token = "[PAD]"
-                    self.predictor.tokenizer.padding_side = "left"
-                else:
-                    self.predictor.tokenizer.pad_token_id = (
-                        self.predictor.model.config.eos_token_id
-                    )
-                    self.predictor.model.config.pad_token_id = (
-                        self.predictor.model.config.eos_token_id
-                    )
-        return model_parameters
 
     def parse_outputs(self, outputs, prompts):
         logger.info("Parsing outputs...")
@@ -366,12 +256,14 @@ class ExperimentRunner:
         return predictions, unpredicted_indexes
 
     def retry_inference(self, prompt, max_retries=3):
-        model_parameters = self.get_model_parameters()
-        model_parameters["do_sample"] = True
+        inference_kwargs = get_inference_kwargs(
+            model=self.params["model"], temperature=self.params["temperature"]
+        )
+        inference_kwargs["do_sample"] = True
 
         for attempt in range(1, max_retries + 1):
             logger.info(f"Retrying, {attempt=}")
-            output = self.predictor(prompt, **model_parameters)[0]["generated_text"]
+            output = self.predictor(prompt, **inference_kwargs)[0]["generated_text"]
             try:
                 pred = parse_model_output(
                     output, double_range=self.params["double_range"]

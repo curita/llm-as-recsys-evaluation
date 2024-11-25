@@ -31,7 +31,6 @@ class PromptGenerator:
         context_header_version: int,
         answer_mark_version: int,
         numeric_user_identifier: bool,
-        task: str,
         **kwargs,
     ) -> None:
         self.dataset = dataset
@@ -51,7 +50,6 @@ class PromptGenerator:
         self.context_header_version = context_header_version
         self.answer_mark_version = answer_mark_version
         self.numeric_user_identifier = numeric_user_identifier
-        self.task = task
 
     def get_movie_info(
         self, movie_id: int, with_genre: bool, with_global_rating: bool
