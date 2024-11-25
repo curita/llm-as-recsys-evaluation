@@ -1,11 +1,23 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from torch.utils.data import Dataset
 
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES
 
 
 def round_to_nearest_half(number):
     return round(number * 2) / 2
+
+
+class MockListDataset(Dataset):
+    def __init__(self, original_list):
+        self.original_list = original_list
+
+    def __len__(self):
+        return len(self.original_list)
+
+    def __getitem__(self, i):
+        return self.original_list[i]
 
 
 class MovieLensDataSet:

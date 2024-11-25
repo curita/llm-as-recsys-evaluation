@@ -8,28 +8,16 @@ import click
 import numpy as np
 import torch
 from tenacity import retry, stop_after_attempt, wait_exponential
-from torch.utils.data import Dataset
 from tqdm.auto import tqdm
 from transformers import pipeline
 from transformers.pipelines.base import Pipeline
 
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES, POSSIBLE_VALUES
-from llm_rec_eval.dataset import MovieLensDataSet
+from llm_rec_eval.dataset import MovieLensDataSet, MockListDataset
 from llm_rec_eval.metrics import AggregatedStats, report_metrics
 from llm_rec_eval.prompts import PromptGenerator
 
 logger = logging.getLogger(__name__)
-
-
-class MockListDataset(Dataset):
-    def __init__(self, original_list):
-        self.original_list = original_list
-
-    def __len__(self):
-        return len(self.original_list)
-
-    def __getitem__(self, i):
-        return self.original_list[i]
 
 
 def parse_model_output(output: str, double_range: bool) -> float:
