@@ -237,7 +237,7 @@ class ExperimentRunner:
         self.stats.add_precision(stats.precision)
         self.stats.add_recall(stats.recall)
         self.stats.add_f1(stats.f1)
-        self.stats.update_value_count(stats.histogram)
+        self.stats.update_value_counts(stats.value_counts)
 
 
 def run_experiment(predictor: Pipeline, stats: AggregatedStats, **params):

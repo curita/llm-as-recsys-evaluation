@@ -20,7 +20,7 @@ class Stats:
     precision: float
     recall: float
     f1: float
-    histogram: dict[float, int]
+    value_counts: dict[float, int]
 
 
 def report_metrics(
@@ -64,7 +64,7 @@ def report_metrics(
         precision=precision,
         recall=recall,
         f1=f1,
-        histogram=value_counts,
+        value_counts=value_counts,
     )
 
 
@@ -93,8 +93,9 @@ class AggregatedStats:
     def add_f1(self, value):
         self.f1.append(value)
 
-    def update_value_count(self, value_counts):
-        self.value_counts.update(value_counts)
+    def update_value_counts(self, value_counts):
+        for value, count in value_counts.items():
+            self.value_counts[value] = self.value_counts.get(value, 0) + count
 
     def increment_prompts_count(self, count):
         self.prompts_count += count
