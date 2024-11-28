@@ -10,7 +10,7 @@ from llm_rec_eval.metrics import AggregatedStats, report_metrics
 from llm_rec_eval.pipeline import get_inference_kwargs
 from llm_rec_eval.prompts import PromptGenerator
 from llm_rec_eval.save import save_results
-from llm_rec_eval.parse import parse_model_output
+from llm_rec_eval.parse import Parser
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ class ExperimentRunner:
     def __init__(self, predictor: Pipeline, stats: AggregatedStats, **params):
         self.predictor = predictor
         self.stats = stats
+        self.parser = Parser(double_range=params["double_range"])
         self.params = params
 
     def run(self):
@@ -94,7 +95,7 @@ class ExperimentRunner:
         unpredicted_indexes = set()
         for index, out in enumerate(outputs):
             try:
-                pred = parse_model_output(out, double_range=self.params["double_range"])
+                pred = self.parser.parse(out)
             except ValueError:
                 try:
                     retried_prompts += 1
@@ -131,9 +132,7 @@ class ExperimentRunner:
             logger.info(f"Retrying, {attempt=}")
             output = self.predictor(prompt, **inference_kwargs)[0]["generated_text"]
             try:
-                pred = parse_model_output(
-                    output, double_range=self.params["double_range"]
-                )
+                pred = self.parser.parse(output)
             except ValueError:
                 continue
             else:
