@@ -34,6 +34,17 @@ FILENAME_PARAMETERS = {
     "FL": "use_flash_attention_2",
 }
 
+CSV_FIELDNAMES = [
+    "Prompt",
+    "Movie",
+    "MovieID",
+    "UserID",
+    "Output",
+    "Prediction",
+    "Truth",
+    "Parameters",
+]
+
 
 def save_results(prompts, outputs, predictions, dataset, run_params):
     logger.info("Dumping results...")
@@ -43,20 +54,7 @@ def save_results(prompts, outputs, predictions, dataset, run_params):
     logger.info(f"Path: {output_file}")
 
     with open(output_file, "w", newline="") as csvfile:
-        writer = csv.DictWriter(
-            csvfile,
-            fieldnames=[
-                "Prompt",
-                "Movie",
-                "MovieID",
-                "UserID",
-                "Output",
-                "Prediction",
-                "Truth",
-                "Parameters",
-            ],
-        )
-
+        writer = csv.DictWriter(csvfile, fieldnames=CSV_FIELDNAMES)
         writer.writeheader()
         parameters = json.dumps(run_params)
         for prmpt, out, pred, row in zip(
