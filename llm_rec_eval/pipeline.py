@@ -59,12 +59,7 @@ def build_pipeline_kwargs(precision: str, use_flash_attention_2: bool) -> dict:
 
 
 def patch_preprocess(predictor: Pipeline, stats: AggregatedStats) -> None:
-    preprocess_method_name = (
-        "_parse_and_tokenize"
-        if hasattr(predictor, "_parse_and_tokenize")
-        else "preprocess"
-    )
-    original_preprocess = getattr(predictor, preprocess_method_name)
+    original_preprocess = getattr(predictor, "preprocess")
     max_token_length = get_max_token_length(predictor)
     logger.info(f"Model context limit: {max_token_length}")
 
@@ -78,7 +73,7 @@ def patch_preprocess(predictor: Pipeline, stats: AggregatedStats) -> None:
 
         return inputs
 
-    setattr(predictor, preprocess_method_name, _patched_preprocess)
+    setattr(predictor, "preprocess", _patched_preprocess)
 
 
 def get_max_token_length(predictor: Pipeline) -> int:
