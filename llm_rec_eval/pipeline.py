@@ -2,7 +2,7 @@ import logging
 
 import torch
 from tenacity import retry, stop_after_attempt, wait_exponential
-from transformers import pipeline
+from transformers import pipeline, BitsAndBytesConfig
 from transformers.pipelines.base import Pipeline
 
 from llm_rec_eval.metrics import AggregatedStats
@@ -19,7 +19,7 @@ def get_default_task(model: str) -> str:
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential())
 def get_pipeline(task: str, model: str, pipeline_kwargs: dict) -> Pipeline:
-    return pipeline(task, model=model, device_map="auto", token=True, **pipeline_kwargs)
+    return pipeline(task, model=model, token=True, **pipeline_kwargs)
 
 
 def load_pipeline(
@@ -31,19 +31,20 @@ def load_pipeline(
     task = get_default_task(model)
     logger.info(f"Initializing {task} pipeline...")
 
-    pipeline_kwargs = {}
+    pipeline_kwargs = {"model_kwargs": {"device_map": "auto"}}
     if precision == "16":
-        pipeline_kwargs["torch_dtype"] = torch.float16
-    elif precision == "8":
-        pipeline_kwargs["model_kwargs"] = {"load_in_8bit": True}
-    elif precision == "4":
-        pipeline_kwargs["model_kwargs"] = {"load_in_4bit": True}
+        pipeline_kwargs["model_kwargs"]["torch_dtype"] = torch.float16
+    elif precision in ["8", "4"]:
+        quantization_config = BitsAndBytesConfig(
+            load_in_8bit=(precision == "8"),
+            load_in_4bit=(precision == "4"),
+        )
+
+        pipeline_kwargs["model_kwargs"]["quantization_config"] = quantization_config
 
     if use_flash_attention_2:
-        pipeline_kwargs["torch_dtype"] = torch.float16
-        pipeline_kwargs.setdefault("model_kwargs", {})["attn_implementation"] = (
-            "flash_attention_2"
-        )
+        pipeline_kwargs["model_kwargs"]["torch_dtype"] = torch.float16
+        pipeline_kwargs["model_kwargs"]["attn_implementation"] = "flash_attention_2"
 
     predictor = get_pipeline(task=task, model=model, pipeline_kwargs=pipeline_kwargs)
     patch_preprocess(predictor, stats)
