@@ -65,12 +65,7 @@ def patch_preprocess(predictor: Pipeline, stats: AggregatedStats) -> None:
         else "preprocess"
     )
     original_preprocess = getattr(predictor, preprocess_method_name)
-    # This is the max sequence length. Does it mean the model doesn't output responses longer than this, or it doesn't work well in contexts longer than this?
-    max_token_length = getattr(predictor.model.config, "max_position_embeddings", None)
-    if not max_token_length and "t5" in predictor.model.name_or_path.lower():
-        # https://huggingface.co/google/flan-t5-xxl/discussions/41#65c3c3706b793334ef78dffc
-        max_token_length = 1024
-
+    max_token_length = get_max_token_length(predictor)
     logger.info(f"Model context limit: {max_token_length}")
 
     def _patched_preprocess(*args, **kwargs):
@@ -84,6 +79,14 @@ def patch_preprocess(predictor: Pipeline, stats: AggregatedStats) -> None:
         return inputs
 
     setattr(predictor, preprocess_method_name, _patched_preprocess)
+
+
+def get_max_token_length(predictor: Pipeline) -> int:
+    max_token_length = getattr(predictor.model.config, "max_position_embeddings", None)
+    if not max_token_length and "t5" in predictor.model.name_or_path.lower():
+        # https://huggingface.co/google/flan-t5-xxl/discussions/41#65c3c3706b793334ef78dffc
+        max_token_length = 1024
+    return max_token_length
 
 
 def configure_padding(predictor: Pipeline) -> None:
