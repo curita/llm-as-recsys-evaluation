@@ -113,8 +113,9 @@ def get_inference_kwargs(model: str, temperature: float) -> dict:
         inference_kwargs["do_sample"] = True
         inference_kwargs["temperature"] = temperature
 
+    inference_kwargs["max_new_tokens"] = 20
+
     if get_default_task(model=model) == "text-generation":
         inference_kwargs["return_full_text"] = False
-        inference_kwargs["max_new_tokens"] = 20
 
     return inference_kwargs
