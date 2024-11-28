@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import logging
 from collections import defaultdict
+from typing import Any
 
 import pandas as pd
 from sklearn.metrics import (
@@ -21,6 +22,14 @@ class Stats:
     recall: float
     f1: float
     value_counts: dict[float, int]
+
+
+def get_distribution(value_counts: dict[Any, int]) -> dict[Any, float]:
+    total = sum(value_counts.values())
+    return {
+        rating: round((count * 100 / total), 2)
+        for rating, count in sorted(value_counts.items())
+    }
 
 
 def report_metrics(
@@ -53,10 +62,7 @@ def report_metrics(
     value_counts = defaultdict(int, {v: 0 for v in POSSIBLE_VALUES})
     for p in predictions:
         value_counts[p] += 1
-    distribution = {
-        rating: round((count * 100 / len(predictions)), 2)
-        for rating, count in sorted(value_counts.items())
-    }
+    distribution = get_distribution(value_counts)
     logger.info(f"Distribution: {distribution}")
 
     return Stats(
@@ -114,38 +120,27 @@ class AggregatedStats:
 
     def report(self):
         logger.info("Aggregated stats.")
-        rmse_s = pd.Series(self.rmse)
-        logger.info(
-            f"Aggregated RMSE. Median: {rmse_s.median()}. STD: {rmse_s.std(ddof=1)}"
-        )
-
-        precision_s = pd.Series(self.precision)
-        logger.info(
-            f"Aggregated Precision. Median: {precision_s.median()}. STD: {precision_s.std(ddof=1)}"
-        )
-
-        recall_s = pd.Series(self.recall)
-        logger.info(
-            f"Aggregated Recall. Median: {recall_s.median()}. STD: {recall_s.std(ddof=1)}"
-        )
-
-        f1_s = pd.Series(self.f1)
-        logger.info(f"Aggregated F1. Median: {f1_s.median()}. STD: {f1_s.std(ddof=1)}")
-
-        total = sum(self.value_counts.values())
-        aggregated_distribution = {
-            rating: round((count * 100 / total), 2)
-            for rating, count in sorted(self.value_counts.items())
-        }
-        logger.info(f"Aggregated Distribution: {aggregated_distribution}")
-
-        logger.info(
-            f"Aggregated Retried Prompts: {self.retried_prompts} ({round(self.retried_prompts * 100 / self.prompts_count, 2)}%)"
-        )
+        self._report_stat("RMSE", self.rmse)
+        self._report_stat("Precision", self.precision)
+        self._report_stat("Recall", self.recall)
+        self._report_stat("F1", self.f1)
+        self._report_distribution()
+        self._report_prompt_counts("Retried Prompts", self.retried_prompts)
         logger.info(f"Aggregated Retries: {self.retries}")
+        self._report_prompt_counts("Unknown Prompts", self.unpredicted)
+        self._report_prompt_counts("Over Limit Prompts", self.over_token_limit)
+
+    def _report_stat(self, name: str, values: list[float]):
+        series = pd.Series(values)
         logger.info(
-            f"Aggregated Unknown Predictions: {self.unpredicted} ({round(self.unpredicted * 100 / self.prompts_count, 2)}%)"
+            f"Aggregated {name}. Median: {series.median()}. STD: {series.std(ddof=1)}"
         )
+
+    def _report_prompt_counts(self, name, count):
         logger.info(
-            f"Aggregated Over Limit Prompts: {self.over_token_limit} ({round(self.over_token_limit * 100 / self.prompts_count, 2)}%)"
+            f"Aggregated {name}: {count} ({round(count * 100 / self.prompts_count, 2)}%)"
         )
+
+    def _report_distribution(self):
+        distribution = get_distribution(self.value_counts)
+        logger.info(f"Aggregated Distribution: {distribution}")
