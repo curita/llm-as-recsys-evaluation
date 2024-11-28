@@ -27,14 +27,7 @@ class ExperimentRunner:
         self.stats.report()
 
     def run_single_experiment(self, run_index):
-        run_params = self.params.copy()
-        run_seed = self.params["initial_run_seed"] + run_index
-        run_params["run_seed"] = run_seed
-
-        logger.info(f"Run {run_seed=}.")
-        np.random.seed(run_seed)
-        torch.manual_seed(run_seed)
-
+        run_params = self.prepare_run_params(run_index)
         dataset = self.create_dataset(run_params)
         prompts = self.generate_prompts(dataset, run_params)
         outputs = self.run_model(prompts)
@@ -44,6 +37,17 @@ class ExperimentRunner:
         save_results(prompts, outputs, predictions, dataset, run_params)
         self.remove_unpredicted_items(truth, predictions, unpredicted_indexes)
         self.report_metrics(truth, predictions)
+
+    def prepare_run_params(self, run_index: int) -> dict:
+        run_params = self.params.copy()
+        run_seed = self.params["initial_run_seed"] + run_index
+        run_params["run_seed"] = run_seed
+
+        logger.info(f"Run {run_seed=}.")
+        np.random.seed(run_seed)
+        torch.manual_seed(run_seed)
+
+        return run_params
 
     def create_dataset(self, run_params):
         logger.info("Creating dataset...")
