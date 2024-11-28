@@ -2,6 +2,7 @@ import csv
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +37,7 @@ FILENAME_PARAMETERS = {
 
 def save_results(prompts, outputs, predictions, dataset, run_params):
     logger.info("Dumping results...")
-    folder_name = f"experiment_{'_'.join(k + '=' + str(run_params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace(
-        "/", ":"
-    )
-    output_folder = Path("results") / folder_name
-    output_folder.mkdir(parents=True, exist_ok=True)
+    output_folder = create_output_folder(run_params)
     output_file = output_folder / "results.csv"
 
     logger.info(f"Path: {output_file}")
@@ -78,3 +75,12 @@ def save_results(prompts, outputs, predictions, dataset, run_params):
                 }
             )
             parameters = ""
+
+
+def create_output_folder(run_params: dict[str, Any]) -> Path:
+    folder_name = f"experiment_{'_'.join(k + '=' + str(run_params[v]) for k, v in FILENAME_PARAMETERS.items())}".replace(
+        "/", ":"
+    )
+    output_folder = Path("results") / folder_name
+    output_folder.mkdir(parents=True, exist_ok=True)
+    return output_folder
