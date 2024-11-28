@@ -72,7 +72,7 @@ def save_results(prompts, outputs, predictions, dataset, run_params):
                     "Parameters": parameters,
                 }
             )
-            parameters = ""
+            parameters = ""  # Only include parameters in the first row
 
 
 def create_output_folder(run_params: dict[str, Any]) -> Path:
