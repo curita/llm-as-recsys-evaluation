@@ -9,7 +9,15 @@ def round_to_nearest_half(number):
     return round(number * 2) / 2
 
 
-class MockListDataset(Dataset):
+class PyTorchListDataset(Dataset):
+    """Class that wraps a list to be used as a PyTorch dataset.
+
+    When a list of prompts wrapped in this class is passed to HuggingFace's
+    `pipeline()`, the latter will return a generator with the model outputs
+    instead of a list. This way batched responses will be yielded as they are
+    ready instead of waiting for the whole prompt list to be processed.
+    """
+
     def __init__(self, original_list):
         self.original_list = original_list
 

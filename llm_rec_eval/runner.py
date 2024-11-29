@@ -5,7 +5,7 @@ import torch
 from tqdm.auto import tqdm
 from transformers.pipelines.base import Pipeline
 
-from llm_rec_eval.dataset import MovieLensDataSet, MockListDataset
+from llm_rec_eval.dataset import MovieLensDataSet, PyTorchListDataset
 from llm_rec_eval.metrics import AggregatedStats, report_metrics
 from llm_rec_eval.pipeline import get_inference_kwargs
 from llm_rec_eval.prompts import PromptGenerator
@@ -78,7 +78,7 @@ class ExperimentRunner:
             p[0]["generated_text"]
             for p in tqdm(
                 self.predictor(
-                    MockListDataset(prompts),
+                    PyTorchListDataset(prompts),
                     batch_size=self.params["batch_size"],
                     **inference_kwargs,
                 ),
