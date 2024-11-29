@@ -12,6 +12,45 @@ class SampleKind(Enum):
 
 
 class PromptGenerator:
+    CONTEXT_HEADER_FORMATS = {
+        1: "",
+        2: "Here are some movie ratings from {user}.\n\n",
+        3: "{user} has provided ratings for various movies.\n\n",
+        4: "This is a selection of {user}'s history of movie ratings.\n\n",
+        5: "Here are some of the highest and lowest ratings that {user} has given to movies.\n\n",
+    }
+
+    SAMPLE_HEADER_FORMATS = {
+        1: "",
+        2: "Some of {user}'s {kind}-rated movies:\n",
+        3: "Some {kind}-rated movies by {user} include:\n",
+    }
+
+    RATING_LISTING_FORMATS = {
+        1: "{user} rated with {rating} stars the movie {movie}.\n",
+        2: "- {movie}: {rating} stars.\n",
+        3: "* {movie} - {rating} stars.\n",
+        4: "* {movie} ({rating} stars).\n",
+    }
+
+    TASK_DESCRIPTION_FORMATS = {
+        1: "On a scale of {values}, how would {user} rate the movie {movie}?",
+        2: "How would {user} rate the movie {movie} on a scale of {values}?",
+        3: "On a scale of {min_value} to {max_value}, how would {user} rate the movie {movie}?",
+        4: "How would {user} rate the movie {movie}?\nOPTIONS:{bulleted_values}",
+        5: "How would {user} rate the movie {movie}?",
+        6: "Predict {user}'s likely rating for the movie {movie} on a scale from {min_value} to {max_value}.",
+        7: "{user} hasn't seen the movie {movie} yet. Predict how {user} will likely rate the movie on a scale from {min_value} to {max_value}.",
+        8: "How would {user} rate the movie {movie} on a scale of {min_value} to {max_value}?",
+    }
+
+    ANSWER_MARK_FORMATS = {
+        1: "\n\n",
+        2: "\n\nRating: ",
+        3: "\n\nEstimated rating: ",
+        4: "\n\nPredicted rating: ",
+    }
+
     def __init__(
         self,
         dataset: MovieLensDataSet,
@@ -84,15 +123,11 @@ class PromptGenerator:
             with_global_rating=self.with_global_rating_in_context,
         )
 
-        # NOTE: "\n" and " " separators between ratings in the listing are treated the same
-        user_rating_versioned = {
-            1: f"{self.get_user_identifier(shot=shot)} rated with {self.convert_rating_to_str(rating)} stars the movie {movie_info}.\n",
-            2: f"- {movie_info}: {self.convert_rating_to_str(rating)} stars.\n",
-            3: f"* {movie_info} - {self.convert_rating_to_str(rating)} stars.\n",
-            4: f"* {movie_info} ({self.convert_rating_to_str(rating)} stars).\n",
-        }
-
-        return user_rating_versioned[self.rating_listing_version]
+        return self.RATING_LISTING_FORMATS[self.rating_listing_version].format(
+            user=self.get_user_identifier(shot=shot),
+            rating=self.convert_rating_to_str(rating),
+            movie=movie_info,
+        )
 
     def get_rated_movies_context(self, ratings_sample: pd.DataFrame, shot: int) -> str:
         context = ""
@@ -104,13 +139,9 @@ class PromptGenerator:
         return context.strip()
 
     def get_sample_header(self, kind: SampleKind, shot: int) -> str:
-        versioned_headers = {
-            1: "",
-            2: f"Some of {self.get_user_identifier(shot=shot)}'s {kind.value}-rated movies:\n",
-            3: f"Some {kind.value}-rated movies by {self.get_user_identifier(shot=shot)} include:\n",
-        }
-
-        return versioned_headers[self.sample_header_version]
+        return self.SAMPLE_HEADER_FORMATS[self.sample_header_version].format(
+            user=self.get_user_identifier(shot=shot), kind=kind.value
+        )
 
     def get_context(self, user_id: int, shot: int) -> str:
         # Shuffled user ratings
@@ -149,34 +180,30 @@ class PromptGenerator:
         return self.get_context_header(shot=shot) + context
 
     def get_context_header(self, shot: int) -> str:
-        header_versioned = {
-            1: "",
-            2: f"Here are some movie ratings from {self.get_user_identifier(shot=shot)}.\n\n",
-            3: f"{self.get_user_identifier(shot=shot)} has provided ratings for various movies.\n\n",
-            4: f"This is a selection of {self.get_user_identifier(shot=shot)}'s history of movie ratings.\n\n",
-            5: f"Here are some of the highest and lowest ratings that {self.get_user_identifier(shot=shot)} has given to movies.\n\n",
-        }
-        return header_versioned[self.context_header_version]
+        return self.CONTEXT_HEADER_FORMATS[self.context_header_version].format(
+            user=self.get_user_identifier(shot=shot)
+        )
 
     def get_task_description(self, movie_id: int, shot: int) -> str:
-        versioned_descriptions = {
-            1: f"On a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}, how would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
-            2: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}} on a scale of {', '.join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}?",
-            3: f"On a scale of {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}, how would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
-            # NOTE: Using chr(10) (equivalent to '\n') circumvents Python's restriction on employing backslashes within f-string expressions.
-            4: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?\nOPTIONS:\n- {(chr(10) + '- ').join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)}",
-            5: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}}?",
-            6: f"Predict {self.get_user_identifier(shot=shot)}'s likely rating for the movie {{}} on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
-            7: f"{self.get_user_identifier(shot=shot)} hasn't seen the movie {{}} yet. Predict how {self.get_user_identifier(shot=shot)} will likely rate the movie on a scale from {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}.",
-            8: f"How would {self.get_user_identifier(shot=shot)} rate the movie {{}} on a scale of {self.convert_rating_to_str(min(POSSIBLE_VALUES))} to {self.convert_rating_to_str(max(POSSIBLE_VALUES))}?",
-        }
-
         movie_info = self.get_movie_info(
             movie_id=movie_id,
             with_genre=self.with_genre,
             with_global_rating=self.with_global_rating_in_task,
         )
-        return versioned_descriptions[self.task_desc_version].format(movie_info)
+        values = ", ".join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)
+        min_value = self.convert_rating_to_str(min(POSSIBLE_VALUES))
+        max_value = self.convert_rating_to_str(max(POSSIBLE_VALUES))
+        bulleted_values = "\n- " + "\n- ".join(
+            self.convert_rating_to_str(x) for x in POSSIBLE_VALUES
+        )
+        return self.TASK_DESCRIPTION_FORMATS[self.task_desc_version].format(
+            user=self.get_user_identifier(shot=shot),
+            movie=movie_info,
+            values=values,
+            min_value=min_value,
+            max_value=max_value,
+            bulleted_values=bulleted_values,
+        )
 
     def generate_zeroshot_prompt(self, user_id: int, movie_id: int, shot: int) -> str:
         task_description = self.get_task_description(movie_id=movie_id, shot=shot)
@@ -189,13 +216,7 @@ class PromptGenerator:
         return task_description
 
     def get_answer_mark(self) -> str:
-        mark_versioned = {
-            1: "\n\n",
-            2: "\n\nRating: ",
-            3: "\n\nEstimated rating: ",
-            4: "\n\nPredicted rating: ",
-        }
-        return mark_versioned[self.answer_mark_version]
+        return self.ANSWER_MARK_FORMATS[self.answer_mark_version]
 
     def __call__(self, user_id: int, movie_id: int) -> str:
         prompt = ""
