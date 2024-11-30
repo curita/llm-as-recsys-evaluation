@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner:
-    def __init__(self, predictor: Pipeline, stats: AggregatedStats, **params):
+    def __init__(self, predictor: Pipeline, **params):
         self.predictor = predictor
-        self.stats = stats
+        self.stats = AggregatedStats()
         self.parser = Parser(double_range=params["double_range"])
         self.params = params
 
@@ -74,7 +74,7 @@ class ExperimentRunner:
         inference_kwargs = get_inference_kwargs(
             model=self.params["model"], temperature=self.params["temperature"]
         )
-        return [
+        outputs = [
             p[0]["generated_text"]
             for p in tqdm(
                 self.predictor(
@@ -85,6 +85,8 @@ class ExperimentRunner:
                 total=len(prompts),
             )
         ]
+        self.stats.increment_over_token_limit(self.predictor.over_token_limit)
+        return outputs
 
     def parse_outputs(self, outputs, prompts):
         logger.info("Parsing outputs...")

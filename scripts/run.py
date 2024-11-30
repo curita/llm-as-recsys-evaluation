@@ -4,7 +4,6 @@ import click
 
 from llm_rec_eval.pipeline import load_pipeline
 from llm_rec_eval.runner import ExperimentRunner
-from llm_rec_eval.metrics import AggregatedStats
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES
 
 logger = logging.getLogger(__name__)
@@ -77,14 +76,12 @@ def main(
     logger.info(
         f"Script parameters {' '.join(str(k) + '=' + str(v) for k, v in params.items())}."
     )
-    stats = AggregatedStats()
     predictor = load_pipeline(
-        stats=stats,
         precision=precision,
         use_flash_attention_2=use_flash_attention_2,
         model=model,
     )
-    runner = ExperimentRunner(predictor, stats, **params)
+    runner = ExperimentRunner(predictor, **params)
     runner.run()
 
 

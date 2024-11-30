@@ -115,8 +115,8 @@ class AggregatedStats:
     def increment_unpredicted(self, count):
         self.unpredicted += count
 
-    def increment_over_token_limit(self):
-        self.over_token_limit += 1
+    def increment_over_token_limit(self, count):
+        self.over_token_limit += count
 
     def report(self):
         logger.info("Aggregated stats.")

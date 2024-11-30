@@ -5,8 +5,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from transformers import pipeline, BitsAndBytesConfig
 from transformers.pipelines.base import Pipeline
 
-from llm_rec_eval.metrics import AggregatedStats
-
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +21,6 @@ def get_pipeline(task: str, model: str, pipeline_kwargs: dict) -> Pipeline:
 
 
 def load_pipeline(
-    stats: AggregatedStats,
     precision: str = "default",
     use_flash_attention_2: bool = False,
     model: str = "google/flan-t5-base",
@@ -33,7 +30,7 @@ def load_pipeline(
 
     pipeline_kwargs = build_pipeline_kwargs(precision, use_flash_attention_2)
     predictor = get_pipeline(task=task, model=model, pipeline_kwargs=pipeline_kwargs)
-    patch_preprocess(predictor, stats)
+    patch_preprocess(predictor)
     configure_padding(predictor)
     return predictor
 
@@ -58,7 +55,7 @@ def build_pipeline_kwargs(precision: str, use_flash_attention_2: bool) -> dict:
     return pipeline_kwargs
 
 
-def patch_preprocess(predictor: Pipeline, stats: AggregatedStats) -> None:
+def patch_preprocess(predictor: Pipeline) -> None:
     original_preprocess = getattr(predictor, "preprocess")
     max_token_length = get_max_token_length(predictor)
     logger.info(f"Model context limit: {max_token_length}")
@@ -69,10 +66,11 @@ def patch_preprocess(predictor: Pipeline, stats: AggregatedStats) -> None:
         input_length = inputs["input_ids"].shape[-1]
 
         if input_length > max_token_length:
-            stats.increment_over_token_limit()
+            predictor.over_token_limit += 1
 
         return inputs
 
+    predictor.over_token_limit = 0
     setattr(predictor, "preprocess", _patched_preprocess)
 
 
