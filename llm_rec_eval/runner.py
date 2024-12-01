@@ -1,3 +1,4 @@
+from dataclasses import asdict
 import logging
 
 import numpy as np
@@ -5,6 +6,7 @@ import torch
 from tqdm.auto import tqdm
 from transformers.pipelines.base import Pipeline
 
+from llm_rec_eval.config import Config
 from llm_rec_eval.dataset import MovieLensDataSet, PyTorchListDataset
 from llm_rec_eval.metrics import AggregatedStats, report_metrics
 from llm_rec_eval.pipeline import get_inference_kwargs
@@ -16,21 +18,21 @@ logger = logging.getLogger(__name__)
 
 
 class ExperimentRunner:
-    def __init__(self, predictor: Pipeline, **params):
+    def __init__(self, predictor: Pipeline, config: Config):
         self.predictor = predictor
         self.stats = AggregatedStats()
-        self.parser = Parser(double_range=params["double_range"])
-        self.params = params
+        self.parser = Parser(double_range=config.double_range)
+        self.config = config
 
     def run(self):
-        for x in range(self.params["runs"]):
+        for x in range(self.config.runs):
             self.run_single_experiment(x)
         self.stats.report()
 
     def run_single_experiment(self, run_index):
         run_params = self.prepare_run_params(run_index)
-        dataset = self.create_dataset(run_params)
-        prompts = self.generate_prompts(dataset, run_params)
+        dataset = self.create_dataset()
+        prompts = self.generate_prompts(dataset)
         outputs = self.run_model(prompts)
         predictions, unpredicted_indexes = self.parse_outputs(outputs, prompts)
         truth = [row.rating for row in dataset.testing_df.itertuples()]
@@ -40,8 +42,8 @@ class ExperimentRunner:
         self.report_metrics(truth, predictions)
 
     def prepare_run_params(self, run_index: int) -> dict:
-        run_params = self.params.copy()
-        run_seed = self.params["initial_run_seed"] + run_index
+        run_params = asdict(self.config)
+        run_seed = run_params["initial_run_seed"] + run_index
         run_params["run_seed"] = run_seed
 
         logger.info(f"Run {run_seed=}.")
@@ -50,17 +52,17 @@ class ExperimentRunner:
 
         return run_params
 
-    def create_dataset(self, run_params):
+    def create_dataset(self):
         logger.info("Creating dataset...")
         return MovieLensDataSet(
-            testing_ratio=self.params["testing_ratio"],
-            training_popularity=self.params["training_popularity"],
-            popularity=self.params["popularity"],
+            testing_ratio=self.config.testing_ratio,
+            training_popularity=self.config.training_popularity,
+            popularity=self.config.popularity,
         )
 
-    def generate_prompts(self, dataset, run_params):
+    def generate_prompts(self, dataset):
         logger.info("Generating prompts...")
-        prompt_generator = PromptGenerator(dataset=dataset, **run_params)
+        prompt_generator = PromptGenerator(dataset=dataset, **asdict(self.config))
         prompts = [
             prompt_generator(user_id=row.userId, movie_id=row.movieId)
             for row in dataset.testing_df.itertuples()
@@ -72,14 +74,14 @@ class ExperimentRunner:
     def run_model(self, prompts):
         logger.info("Running model...")
         inference_kwargs = get_inference_kwargs(
-            model=self.params["model"], temperature=self.params["temperature"]
+            model=self.config.model, temperature=self.config.temperature
         )
         outputs = [
             p[0]["generated_text"]
             for p in tqdm(
                 self.predictor(
                     PyTorchListDataset(prompts),
-                    batch_size=self.params["batch_size"],
+                    batch_size=self.config.batch_size,
                     **inference_kwargs,
                 ),
                 total=len(prompts),
@@ -126,7 +128,7 @@ class ExperimentRunner:
 
     def retry_inference(self, prompt, max_retries=3):
         inference_kwargs = get_inference_kwargs(
-            model=self.params["model"], temperature=self.params["temperature"]
+            model=self.config.model, temperature=self.config.temperature
         )
         inference_kwargs["do_sample"] = True
 
