@@ -30,27 +30,25 @@ class ExperimentRunner:
         self.stats.report()
 
     def run_single_experiment(self, run_index):
-        run_params = self.prepare_run_params(run_index)
+        run_seed = self.set_run_seed(run_index)
         dataset = self.create_dataset()
         prompts = self.generate_prompts(dataset)
         outputs = self.run_model(prompts)
         predictions, unpredicted_indexes = self.parse_outputs(outputs, prompts)
         truth = [row.rating for row in dataset.testing_df.itertuples()]
 
-        save_results(prompts, outputs, predictions, dataset, run_params)
+        save_results(prompts, outputs, predictions, dataset, run_seed, self.config)
         self.remove_unpredicted_items(truth, predictions, unpredicted_indexes)
         self.report_metrics(truth, predictions)
 
-    def prepare_run_params(self, run_index: int) -> dict:
-        run_params = asdict(self.config)
-        run_seed = run_params["initial_run_seed"] + run_index
-        run_params["run_seed"] = run_seed
+    def set_run_seed(self, run_index: int) -> int:
+        run_seed = self.config.initial_run_seed + run_index
 
         logger.info(f"Run {run_seed=}.")
         np.random.seed(run_seed)
         torch.manual_seed(run_seed)
 
-        return run_params
+        return run_seed
 
     def create_dataset(self):
         logger.info("Creating dataset...")

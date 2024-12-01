@@ -1,4 +1,5 @@
 import csv
+from dataclasses import asdict
 import json
 import logging
 from pathlib import Path
@@ -46,8 +47,9 @@ CSV_FIELDNAMES = [
 ]
 
 
-def save_results(prompts, outputs, predictions, dataset, run_params):
+def save_results(prompts, outputs, predictions, dataset, run_seed, config):
     logger.info("Dumping results...")
+    run_params = {**asdict(config), "run_seed": run_seed}
     output_folder = create_output_folder(run_params)
     output_file = output_folder / "results.csv"
 
