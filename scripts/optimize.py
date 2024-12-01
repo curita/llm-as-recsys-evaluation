@@ -59,7 +59,7 @@ def objective(
             # return t.value  # Return the previous value without re-evaluating it.
             raise optuna.TrialPruned("Duplicate parameter set")
 
-    runners = []
+    runners_stats = []
     for predictor in predictors:
         config = Config(
             model=predictor.model.name_or_path,
@@ -74,13 +74,19 @@ def objective(
             **params,
         )
         runner = ExperimentRunner(predictor=predictor, config=config)
-        runner.run()
-        runners.append(runner)
+        try:
+            runner.run()
+            stats = runner.stats
+        except StopExperiment:
+            stats = None
+        runners_stats.append(stats)
 
     if metric == "f1":
-        return [np.mean(runner.stats.f1) for runner in runners]
+        return [np.mean(stats.f1) if stats else 0 for stats in runners_stats]
     elif metric == "rmse":
-        return [np.mean(runner.stats.rmse) for runner in runners]
+        return [
+            np.mean(stats.rmse) if stats else float("inf") for stats in runners_stats
+        ]
 
 
 def print_best_callback(study, trial):
@@ -154,7 +160,7 @@ def main(
         timeout=timeout,
         callbacks=[print_best_callback],
         show_progress_bar=True,
-        catch=(optuna.TrialPruned, StopExperiment),
+        catch=(optuna.TrialPruned),
     )
 
 
