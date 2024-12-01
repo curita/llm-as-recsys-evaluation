@@ -2,10 +2,15 @@ import logging
 from functools import partial
 
 import click
+import numpy as np
 import optuna
 from optuna.trial import TrialState
-from run import get_default_task, load_pipeline, run_experiment
 from transformers.pipelines.base import Pipeline
+
+from llm_rec_eval.config import Config
+from llm_rec_eval.pipeline import load_pipeline
+from llm_rec_eval.runner import ExperimentRunner, StopExperiment
+from llm_rec_eval.prompts import PromptGenerator
 
 
 def objective(
@@ -16,27 +21,34 @@ def objective(
     **params,
 ):
     task_desc_version = trial.suggest_categorical(
-        "task_desc_version", list(range(1, 8 + 1))
+        "task_desc_version",
+        list(range(1, len(PromptGenerator.TASK_DESCRIPTION_FORMATS) + 1)),
     )
     likes_first = trial.suggest_categorical("likes_first", [True, False])
     keep_trailing_zeroes = trial.suggest_categorical(
         "keep_trailing_zeroes", [True, False]
     )
     sample_header_version = trial.suggest_categorical(
-        "sample_header_version", list(range(1, 3 + 1))
+        "sample_header_version",
+        list(range(1, len(PromptGenerator.SAMPLE_HEADER_FORMATS) + 1)),
     )
     rating_listing_version = trial.suggest_categorical(
-        "rating_listing_version", list(range(1, 4 + 1))
+        "rating_listing_version",
+        list(range(1, len(PromptGenerator.RATING_LISTING_FORMATS) + 1)),
     )
     context_header_version = trial.suggest_categorical(
-        "context_header_version", list(range(1, 5 + 1))
+        "context_header_version",
+        list(range(1, len(PromptGenerator.CONTEXT_HEADER_FORMATS) + 1)),
     )
 
-    answer_mark_version_range = (
-        range(1, 4 + 1) if include_empty_answer_mark else range(2, 4 + 1)
-    )
+    answer_mark_version_start = 1 if include_empty_answer_mark else 2
     answer_mark_version = trial.suggest_categorical(
-        "answer_mark_version", list(answer_mark_version_range)
+        "answer_mark_version",
+        list(
+            range(
+                answer_mark_version_start, len(PromptGenerator.ANSWER_MARK_FORMATS) + 1
+            )
+        ),
     )
     numeric_user_identifier = trial.suggest_categorical(
         "numeric_user_identifier", [True, False]
@@ -47,10 +59,10 @@ def objective(
             # return t.value  # Return the previous value without re-evaluating it.
             raise optuna.TrialPruned("Duplicate parameter set")
 
-    rmses = []
-    f1s = []
+    runners = []
     for predictor in predictors:
-        rmse, f1 = run_experiment(
+        config = Config(
+            model=predictor.model.name_or_path,
             task_desc_version=task_desc_version,
             likes_first=likes_first,
             keep_trailing_zeroes=keep_trailing_zeroes,
@@ -59,18 +71,16 @@ def objective(
             context_header_version=context_header_version,
             answer_mark_version=answer_mark_version,
             numeric_user_identifier=numeric_user_identifier,
-            predictor=predictor,
-            model=predictor.model.name_or_path,
-            task=predictor.task,
             **params,
         )
-        rmses.append(rmse)
-        f1s.append(f1)
+        runner = ExperimentRunner(predictor=predictor, config=config)
+        runner.run()
+        runners.append(runner)
 
     if metric == "f1":
-        return f1s
+        return [np.mean(runner.stats.f1) for runner in runners]
     elif metric == "rmse":
-        return rmses
+        return [np.mean(runner.stats.rmse) for runner in runners]
 
 
 def print_best_callback(study, trial):
@@ -125,9 +135,7 @@ def main(
     )
     predictors = []
     for model in models:
-        predictor = load_pipeline(
-            task=get_default_task(model=model), precision=precision, model=model
-        )
+        predictor = load_pipeline(precision=precision, model=model)
         predictors.append(predictor)
 
     partial_objective = partial(
@@ -146,6 +154,7 @@ def main(
         timeout=timeout,
         callbacks=[print_best_callback],
         show_progress_bar=True,
+        catch=(optuna.TrialPruned, StopExperiment),
     )
 
 
