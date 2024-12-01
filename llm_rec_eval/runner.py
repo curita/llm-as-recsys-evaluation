@@ -74,6 +74,7 @@ class ExperimentRunner:
         inference_kwargs = get_inference_kwargs(
             model=self.config.model, temperature=self.config.temperature
         )
+        self.predictor.over_token_limit = 0
         outputs = [
             p[0]["generated_text"]
             for p in tqdm(
