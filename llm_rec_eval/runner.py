@@ -17,6 +17,10 @@ from llm_rec_eval.parse import Parser
 logger = logging.getLogger(__name__)
 
 
+class StopExperiment(Exception):
+    pass
+
+
 class ExperimentRunner:
     def __init__(self, predictor: Pipeline, config: Config):
         self.predictor = predictor
@@ -154,11 +158,11 @@ class ExperimentRunner:
         logger.info(f"Unknown predictions: {len(unpredicted_indexes)}")
         self.stats.increment_unpredicted(len(unpredicted_indexes))
 
-    def report_metrics(self, truth, predictions):
         if not predictions:
             logger.info("All predictions are unknown, stopping experiment...")
-            return
+            raise StopExperiment("All predictions are unknown")
 
+    def report_metrics(self, truth, predictions):
         stats = report_metrics(truth, predictions)
         self.stats.add_rmse(stats.rmse)
         self.stats.add_precision(stats.precision)
