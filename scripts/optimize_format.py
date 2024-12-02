@@ -104,18 +104,50 @@ def print_best_callback(study, trial):
 
 
 @click.command
-@click.option("--testing-ratio", default=0.02, type=float)
-@click.option("--runs", default=5, type=int)
-@click.option("--model", "models", type=str, multiple=True)
 @click.option(
-    "--precision", default="default", type=click.Choice(["default", "16", "8", "4"])
+    "--testing-ratio",
+    default=0.02,
+    type=float,
+    help="Testing dataset ratio for each experiment run.",
 )
-@click.option("--shots", default=0, type=int)
-@click.option("--study-name", default=None, type=str)
-@click.option("--trials", default=None, type=int)
-@click.option("--timeout", default=None, type=int)
-@click.option("--include-empty-answer-mark/--exclude-empty-answer-mark", default=True)
-@click.option("--metric", default="f1", type=click.Choice(["f1", "rmse"]))
+@click.option("--runs", default=5, type=int, help="Number of runs for each experiment.")
+@click.option(
+    "--model",
+    "models",
+    type=str,
+    multiple=True,
+    help="List of models to evaluate. Specify multiple models by repeating this option.",
+)
+@click.option(
+    "--precision",
+    default="default",
+    type=click.Choice(["default", "16", "8", "4"]),
+    help="Numerical precision to load all models weights.",
+)
+@click.option(
+    "--shots", default=0, type=int, help="Number of shots for in-context learning."
+)
+@click.option(
+    "--include-empty-answer-mark/--exclude-empty-answer-mark",
+    default=True,
+    help="Include or exclude empty answer mark.",
+)
+@click.option("--study-name", default=None, type=str, help="Identifier for the study.")
+@click.option(
+    "--trials",
+    default=None,
+    type=int,
+    help="Max number of trials to run in this study.",
+)
+@click.option(
+    "--timeout", default=None, type=int, help="Timeout for the study in seconds."
+)
+@click.option(
+    "--metric",
+    default="f1",
+    type=click.Choice(["f1", "rmse"]),
+    help="Metric to optimize in the study.",
+)
 def main(
     testing_ratio,
     runs,
@@ -128,6 +160,7 @@ def main(
     include_empty_answer_mark,
     metric,
 ):
+    """Optimize the format of prompts for the given models using Optuna."""
     if metric == "f1":
         direction = "maximize"
     elif metric == "rmse":
