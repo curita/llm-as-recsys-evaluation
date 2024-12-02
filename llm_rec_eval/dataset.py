@@ -1,6 +1,7 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
+from numpy.random import RandomState
 
 from llm_rec_eval.constants import FREQUENCY_CATEGORIES
 
@@ -36,6 +37,7 @@ class MovieLensDataSet:
         testing_ratio: float = 0.2,
         training_popularity: tuple[str] = None,
         popularity: tuple[str] = None,
+        random_state: int | RandomState = None,
     ) -> None:
         self.ratings_df = ratings_df
         self.movies_df = movies_df
@@ -48,7 +50,7 @@ class MovieLensDataSet:
             ]
 
         self.training_df, self.testing_df = train_test_split(
-            self.ratings_df, test_size=testing_ratio
+            self.ratings_df, test_size=testing_ratio, random_state=random_state
         )
 
         if training_popularity:
