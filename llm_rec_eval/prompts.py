@@ -1,5 +1,7 @@
 from enum import Enum
 
+import numpy as np
+from numpy.random import RandomState
 import pandas as pd
 
 from llm_rec_eval.config import Config
@@ -56,9 +58,15 @@ class PromptGenerator:
         self,
         dataset: MovieLensDataSet,
         config: Config,
+        random_state: int | RandomState | None = None,
     ) -> None:
         self.dataset = dataset
         self.config = config
+        self.rng = (
+            np.random.default_rng(random_state)
+            if isinstance(random_state, int)
+            else random_state
+        )
 
     def get_movie_info(
         self, movie_id: int, with_genre: bool, with_global_rating: bool
@@ -117,7 +125,7 @@ class PromptGenerator:
         # Shuffled user ratings
         user_ratings = (
             self.dataset.training_df[self.dataset.training_df["userId"] == user_id]
-            .sample(frac=1)
+            .sample(frac=1, random_state=self.rng)
             .sort_values("rating", ascending=False)
         )
 
@@ -194,7 +202,9 @@ class PromptGenerator:
             self.dataset.training_df["movieId"] == movie_id
         ]
         example_ratings = movie_ratings.sample(
-            n=min(self.config.shots, len(movie_ratings)), replace=False
+            n=min(self.config.shots, len(movie_ratings)),
+            replace=False,
+            random_state=self.rng,
         )
         i = -1
         for i, example in enumerate(example_ratings.itertuples()):
