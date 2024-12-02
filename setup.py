@@ -8,6 +8,7 @@ setup(
         "pandas",
         "numpy",
         "tqdm",
+        "huggingface_hub",
         "transformers",
         "torch",
         "scikit-learn",

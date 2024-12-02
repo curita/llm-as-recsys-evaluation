@@ -6,6 +6,14 @@
 pip install -e .
 ```
 
+## (Optional) Login to HuggingFace
+
+Only needed if gated models will be employed.
+
+```sh
+huggingface-cli login
+```
+
 ## Download Dataset
 
 ```sh
