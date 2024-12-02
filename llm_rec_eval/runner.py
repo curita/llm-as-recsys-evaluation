@@ -1,4 +1,3 @@
-from dataclasses import asdict
 import logging
 
 import numpy as np
@@ -64,7 +63,7 @@ class ExperimentRunner:
 
     def generate_prompts(self, dataset):
         logger.info("Generating prompts...")
-        prompt_generator = PromptGenerator(dataset=dataset, **asdict(self.config))
+        prompt_generator = PromptGenerator(dataset=dataset, config=self.config)
         prompts = [
             prompt_generator(user_id=row.userId, movie_id=row.movieId)
             for row in dataset.testing_df.itertuples()

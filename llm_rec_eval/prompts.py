@@ -2,6 +2,7 @@ from enum import Enum
 
 import pandas as pd
 
+from llm_rec_eval.config import Config
 from llm_rec_eval.constants import POSSIBLE_VALUES
 from llm_rec_eval.dataset import MovieLensDataSet
 
@@ -54,41 +55,10 @@ class PromptGenerator:
     def __init__(
         self,
         dataset: MovieLensDataSet,
-        with_genre: bool,
-        with_global_rating_in_context: bool,
-        with_global_rating_in_task: bool,
-        likes_first: bool,
-        likes_count: int,
-        dislikes_count: int,
-        task_desc_version: int,
-        with_context: bool,
-        shots: int,
-        keep_trailing_zeroes: bool,
-        double_range: bool,
-        sample_header_version: int,
-        rating_listing_version: int,
-        context_header_version: int,
-        answer_mark_version: int,
-        numeric_user_identifier: bool,
-        **kwargs,
+        config: Config,
     ) -> None:
         self.dataset = dataset
-        self.with_genre = with_genre
-        self.with_global_rating_in_context = with_global_rating_in_context
-        self.with_global_rating_in_task = with_global_rating_in_task
-        self.likes_first = likes_first
-        self.likes_count = likes_count
-        self.dislikes_count = dislikes_count
-        self.task_desc_version = task_desc_version
-        self.with_context = with_context
-        self.shots = shots
-        self.keep_trailing_zeroes = keep_trailing_zeroes
-        self.double_range = double_range
-        self.sample_header_version = sample_header_version
-        self.rating_listing_version = rating_listing_version
-        self.context_header_version = context_header_version
-        self.answer_mark_version = answer_mark_version
-        self.numeric_user_identifier = numeric_user_identifier
+        self.config = config
 
     def get_movie_info(
         self, movie_id: int, with_genre: bool, with_global_rating: bool
@@ -103,27 +73,27 @@ class PromptGenerator:
         return info
 
     def convert_rating_to_str(self, rating: float) -> str:
-        if self.double_range:
+        if self.config.double_range:
             rating *= 2
 
-        if self.keep_trailing_zeroes:
+        if self.config.keep_trailing_zeroes:
             return str(rating)
         else:
             return f"{rating:g}"
 
     def get_user_identifier(self, shot: int) -> str:
-        _id = shot + 1 if self.numeric_user_identifier else chr(65 + shot)
+        _id = shot + 1 if self.config.numeric_user_identifier else chr(65 + shot)
 
         return f'User "{_id}"'
 
     def get_user_rating_display(self, shot: int, rating: float, movie_id: int) -> str:
         movie_info = self.get_movie_info(
             movie_id=movie_id,
-            with_genre=self.with_genre,
-            with_global_rating=self.with_global_rating_in_context,
+            with_genre=self.config.with_genre,
+            with_global_rating=self.config.with_global_rating_in_context,
         )
 
-        return self.RATING_LISTING_FORMATS[self.rating_listing_version].format(
+        return self.RATING_LISTING_FORMATS[self.config.rating_listing_version].format(
             user=self.get_user_identifier(shot=shot),
             rating=self.convert_rating_to_str(rating),
             movie=movie_info,
@@ -139,7 +109,7 @@ class PromptGenerator:
         return context.strip()
 
     def get_sample_header(self, kind: SampleKind, shot: int) -> str:
-        return self.SAMPLE_HEADER_FORMATS[self.sample_header_version].format(
+        return self.SAMPLE_HEADER_FORMATS[self.config.sample_header_version].format(
             user=self.get_user_identifier(shot=shot), kind=kind.value
         )
 
@@ -151,9 +121,9 @@ class PromptGenerator:
             .sort_values("rating", ascending=False)
         )
 
-        likes_sample = user_ratings[user_ratings.rating >= 4][: self.likes_count]
+        likes_sample = user_ratings[user_ratings.rating >= 4][: self.config.likes_count]
         dislikes_sample = user_ratings[user_ratings.rating <= 2][::-1][
-            : self.dislikes_count
+            : self.config.dislikes_count
         ]
 
         assert len(likes_sample) or len(dislikes_sample)
@@ -163,7 +133,7 @@ class PromptGenerator:
             (dislikes_sample, SampleKind.lowest),
         ]
 
-        if not self.likes_first:
+        if not self.config.likes_first:
             rated_context_data = reversed(rated_context_data)
 
         context = ""
@@ -180,15 +150,15 @@ class PromptGenerator:
         return self.get_context_header(shot=shot) + context
 
     def get_context_header(self, shot: int) -> str:
-        return self.CONTEXT_HEADER_FORMATS[self.context_header_version].format(
+        return self.CONTEXT_HEADER_FORMATS[self.config.context_header_version].format(
             user=self.get_user_identifier(shot=shot)
         )
 
     def get_task_description(self, movie_id: int, shot: int) -> str:
         movie_info = self.get_movie_info(
             movie_id=movie_id,
-            with_genre=self.with_genre,
-            with_global_rating=self.with_global_rating_in_task,
+            with_genre=self.config.with_genre,
+            with_global_rating=self.config.with_global_rating_in_task,
         )
         values = ", ".join(self.convert_rating_to_str(x) for x in POSSIBLE_VALUES)
         min_value = self.convert_rating_to_str(min(POSSIBLE_VALUES))
@@ -196,7 +166,7 @@ class PromptGenerator:
         bulleted_values = "\n- " + "\n- ".join(
             self.convert_rating_to_str(x) for x in POSSIBLE_VALUES
         )
-        return self.TASK_DESCRIPTION_FORMATS[self.task_desc_version].format(
+        return self.TASK_DESCRIPTION_FORMATS[self.config.task_desc_version].format(
             user=self.get_user_identifier(shot=shot),
             movie=movie_info,
             values=values,
@@ -209,14 +179,14 @@ class PromptGenerator:
         task_description = self.get_task_description(movie_id=movie_id, shot=shot)
         task_description += self.get_answer_mark()
 
-        if self.with_context:
+        if self.config.with_context:
             context = self.get_context(user_id=user_id, shot=shot)
             return f"{context}\n\n{task_description}"
 
         return task_description
 
     def get_answer_mark(self) -> str:
-        return self.ANSWER_MARK_FORMATS[self.answer_mark_version]
+        return self.ANSWER_MARK_FORMATS[self.config.answer_mark_version]
 
     def __call__(self, user_id: int, movie_id: int) -> str:
         prompt = ""
@@ -224,7 +194,7 @@ class PromptGenerator:
             self.dataset.training_df["movieId"] == movie_id
         ]
         example_ratings = movie_ratings.sample(
-            n=min(self.shots, len(movie_ratings)), replace=False
+            n=min(self.config.shots, len(movie_ratings)), replace=False
         )
         i = -1
         for i, example in enumerate(example_ratings.itertuples()):
