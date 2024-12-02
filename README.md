@@ -20,6 +20,14 @@ huggingface-cli login
 python scripts/download_dataset.py
 ```
 
+## (Optional) Download Model
+
+Models will be downloaded automatically when used by other scripts otherwise.
+
+```sh
+python scripts/download_model.py --model google/flan-t5-small
+```
+
 ## Evaluate
 
 ```sh
