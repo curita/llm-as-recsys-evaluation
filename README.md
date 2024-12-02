@@ -12,8 +12,8 @@ pip install -e .
 python scripts/run.py --testing-ratio 0.001 --model google/flan-t5-small --shots 1
 ```
 
-## Optimize
+## Optimize Format
 
 ```sh
-python scripts/optimize.py --timeout 60 --runs 1 --testing-ratio 0.001 --exclude-empty-answer-mark --model google/flan-t5-small
+python scripts/optimize_format.py --timeout 60 --runs 1 --testing-ratio 0.001 --exclude-empty-answer-mark --model google/flan-t5-small
 ```
