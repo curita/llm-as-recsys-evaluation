@@ -26,9 +26,9 @@ class Config:
     with_global_rating_in_context: bool = False
     with_global_rating_in_task: bool = False
     # Prompt Formatting
-    rating_listing_version: int = 1
     context_header_version: int = 1
     sample_header_version: int = 1
+    rating_listing_version: int = 1
     task_desc_version: int = 1
     answer_mark_version: int = 1
     numeric_user_identifier: bool = False
