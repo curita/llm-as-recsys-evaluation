@@ -55,7 +55,7 @@ class ExperimentRunner:
 
     def create_dataset(self):
         logger.info("Creating dataset...")
-        return MovieLensDataSet(
+        return MovieLensDataSet.from_csv(
             testing_ratio=self.config.testing_ratio,
             training_popularity=self.config.training_popularity,
             popularity=self.config.popularity,

@@ -31,12 +31,14 @@ class PyTorchListDataset(Dataset):
 class MovieLensDataSet:
     def __init__(
         self,
-        testing_ratio: float,
-        training_popularity: tuple[str],
-        popularity: tuple[str],
+        ratings_df: pd.DataFrame,
+        movies_df: pd.DataFrame,
+        testing_ratio: float = 0.2,
+        training_popularity: tuple[str] = None,
+        popularity: tuple[str] = None,
     ) -> None:
-        self.ratings_df = pd.read_csv("./data/ml-latest-small/ratings.csv")
-        self.movies_df = pd.read_csv("./data/ml-latest-small/movies.csv")
+        self.ratings_df = ratings_df
+        self.movies_df = movies_df
         self.normalize_movie_titles()
         self.categorize_movie_popularity()
 
@@ -53,6 +55,17 @@ class MovieLensDataSet:
             self.training_df = self.training_df[
                 self.training_df.popularity.isin(training_popularity)
             ]
+
+    @classmethod
+    def from_csv(
+        cls,
+        ratings_path: str = "./data/ml-latest-small/ratings.csv",
+        movies_path: str = "./data/ml-latest-small/movies.csv",
+        **kwargs,
+    ):
+        ratings_df = pd.read_csv(ratings_path)
+        movies_df = pd.read_csv(movies_path)
+        return cls(ratings_df, movies_df, **kwargs)
 
     def normalize_movie_titles(self):
         self.movies_df["normalize_title"] = self.movies_df["title"].str.replace(
