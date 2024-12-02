@@ -6,6 +6,12 @@
 pip install -e .
 ```
 
+## Download Dataset
+
+```sh
+python scripts/download_dataset.py
+```
+
 ## Evaluate
 
 ```sh

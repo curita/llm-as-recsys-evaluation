@@ -35,8 +35,8 @@ class MovieLensDataSet:
         training_popularity: tuple[str],
         popularity: tuple[str],
     ) -> None:
-        self.ratings_df = pd.read_csv("ml-latest-small/ratings.csv")
-        self.movies_df = pd.read_csv("ml-latest-small/movies.csv")
+        self.ratings_df = pd.read_csv("./data/ml-latest-small/ratings.csv")
+        self.movies_df = pd.read_csv("./data/ml-latest-small/movies.csv")
         self.normalize_movie_titles()
         self.categorize_movie_popularity()
 
