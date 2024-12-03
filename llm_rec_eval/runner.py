@@ -128,7 +128,13 @@ class ExperimentRunner:
         self.stats.increment_retries(retries)
         return predictions, unpredicted_indexes
 
-    def retry_inference(self, prompt, max_retries=3):
+    def retry_inference(self, prompt: str, max_retries=3) -> tuple[str, float, int]:
+        """
+        Retry the prompt enabling sampling.
+
+        If successful, return the output, prediction (parsed output) and how
+        many attempts it took. Otherwise, raises a ValueError.
+        """
         inference_kwargs = get_inference_kwargs(
             model=self.config.model, temperature=self.config.temperature
         )
