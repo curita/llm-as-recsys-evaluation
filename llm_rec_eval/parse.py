@@ -6,6 +6,10 @@ from llm_rec_eval.constants import POSSIBLE_VALUES
 logger = logging.getLogger(__name__)
 
 
+class ParserError(Exception):
+    pass
+
+
 class Parser:
     def __init__(self, double_range: bool) -> None:
         self.double_range = double_range
@@ -23,7 +27,7 @@ class Parser:
         except (ValueError, AssertionError) as err:
             msg = f"Can't parse: {original_output!r}"
             logger.exception(msg)
-            raise ValueError(msg) from err
+            raise ParserError(msg) from err
 
     def clean_output(self, output: str) -> str:
         # Strip leading puntuation, spaces or emojis

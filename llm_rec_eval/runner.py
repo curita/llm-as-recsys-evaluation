@@ -11,7 +11,7 @@ from llm_rec_eval.metrics import AggregatedStats, report_metrics
 from llm_rec_eval.pipeline import get_inference_kwargs
 from llm_rec_eval.prompts import PromptGenerator
 from llm_rec_eval.save import save_results
-from llm_rec_eval.parse import Parser
+from llm_rec_eval.parse import Parser, ParserError
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class ExperimentRunner:
         for index, out in enumerate(outputs):
             try:
                 pred = self.parser.parse(out)
-            except ValueError:
+            except ParserError:
                 try:
                     retried_prompts += 1
                     (
@@ -116,7 +116,7 @@ class ExperimentRunner:
                     retries += retried_attempts
                     outputs[index] = retried_output
                     pred = retried_prediction
-                except ValueError:
+                except ParserError:
                     retries += max_retries
                     unpredicted_indexes.add(index)
                     pred = "N/A"
@@ -145,12 +145,12 @@ class ExperimentRunner:
             output = self.predictor(prompt, **inference_kwargs)[0]["generated_text"]
             try:
                 pred = self.parser.parse(output)
-            except ValueError:
+            except ParserError:
                 continue
             else:
                 return output, pred, attempt
 
-        raise ValueError("Couldn't get prediction")
+        raise ParserError("Couldn't get prediction")
 
     def remove_unpredicted_items(self, truth, predictions, unpredicted_indexes):
         logger.info("Removing unpredicted items...")
