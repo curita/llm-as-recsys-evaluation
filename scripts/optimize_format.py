@@ -112,13 +112,6 @@ def print_best_callback(study, trial):
 )
 @click.option("--runs", default=5, type=int, help="Number of runs for each experiment.")
 @click.option(
-    "--model",
-    "models",
-    type=str,
-    multiple=True,
-    help="List of models to evaluate. Specify multiple models by repeating this option.",
-)
-@click.option(
     "--precision",
     default="default",
     type=click.Choice(["default", "16", "8", "4"]),
@@ -126,6 +119,13 @@ def print_best_callback(study, trial):
 )
 @click.option(
     "--shots", default=0, type=int, help="Number of shots for in-context learning."
+)
+@click.option(
+    "--model",
+    "models",
+    type=str,
+    multiple=True,
+    help="List of models to evaluate. Specify multiple models by repeating this option.",
 )
 @click.option(
     "--include-empty-answer-mark/--exclude-empty-answer-mark",
