@@ -38,9 +38,9 @@ class ExperimentRunner:
         prompts = self.generate_prompts(dataset)
         outputs = self.run_model(prompts)
         predictions, unpredicted_indexes = self.parse_outputs(outputs, prompts)
-        truth = [row.rating for row in dataset.testing_df.itertuples()]
 
         save_results(prompts, outputs, predictions, dataset, run_seed, self.config)
+        truth = [row.rating for row in dataset.testing_df.itertuples()]
         self.remove_unpredicted_items(truth, predictions, unpredicted_indexes)
         self.report_metrics(truth, predictions)
 
