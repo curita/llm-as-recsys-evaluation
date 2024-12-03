@@ -48,10 +48,10 @@ class PromptGenerator:
     }
 
     ANSWER_MARK_FORMATS = {
-        1: "\n\n",
-        2: "\n\nRating: ",
-        3: "\n\nEstimated rating: ",
-        4: "\n\nPredicted rating: ",
+        1: "",
+        2: "Rating: ",
+        3: "Estimated rating: ",
+        4: "Predicted rating: ",
     }
 
     def __init__(
@@ -185,7 +185,7 @@ class PromptGenerator:
 
     def generate_zeroshot_prompt(self, user_id: int, movie_id: int, shot: int) -> str:
         task_description = self.get_task_description(movie_id=movie_id, shot=shot)
-        task_description += self.get_answer_mark()
+        task_description += f"\n\n{self.get_answer_mark()}"
 
         if self.config.with_context:
             context = self.get_context(user_id=user_id, shot=shot)
